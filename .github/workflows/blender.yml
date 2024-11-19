@@ -16,7 +16,7 @@ jobs:
     - name: Build Blender Extension
       run: ./blender/blender --command extension build
     - name: Move zip file
-      run: mkdir build_output && mv node_runner-0.9.8.zip build_output
+      run: mkdir build_output && mv node_runner-*.zip build_output
     - name: Archive Build
       uses: actions/upload-artifact@v3
       with: 
