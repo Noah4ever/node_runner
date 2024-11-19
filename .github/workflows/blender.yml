@@ -1,0 +1,25 @@
+name: Build Blender Extension
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Install Blender
+      run: | 
+        wget https://download.blender.org/release/Blender4.2/blender-4.2.4-linux-x64.tar.xz -O blender.tar.xz
+        mkdir blender
+        tar -xvf blender.tar.xz -C blender --strip-components=1
+    - name: Build Blender Extension
+      run: |
+        ./blender/blender --background --command extension build
+    - name: Archive Build
+      uses: actions/upload-artifact@v3
+      with: 
+        name: blender-extension-build
+        path: build_output/
+
+
