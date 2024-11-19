@@ -14,7 +14,7 @@ from . import node_runner_serialize
 bl_info = {
     "name": "Node Runner",
     "author": "Noah Thiering, Julius Ewert",
-    "version": (0, 9, 8),
+    "version": (0, 9, 9),
     "blender": (4, 2, 2),
     "location": "Node Editor Context Menu On Selected Nodes",
     "description": "Tool to easily import and export shader nodes as a string",
