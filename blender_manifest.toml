@@ -16,4 +16,4 @@ license = [
 ]
 
 [permissions]
-clipboard = "Copy and paste bone transforms"
+clipboard = "Copy Node Runner Hash to clipboard"
