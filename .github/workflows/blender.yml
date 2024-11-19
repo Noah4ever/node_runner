@@ -15,7 +15,8 @@ jobs:
         tar -xvf blender.tar.xz -C blender --strip-components=1
     - name: Build Blender Extension
       run: |
-        ./blender/blender --background --command extension build
+        ./blender/blender --command extension build
+        ls 
     - name: Archive Build
       uses: actions/upload-artifact@v3
       with: 
