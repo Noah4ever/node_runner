@@ -9,9 +9,12 @@ jobs:
   build:
     name: Build Blender Extension
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
     - name: Install Blender
       run: | 
         wget https://download.blender.org/release/Blender4.2/blender-4.2.4-linux-x64.tar.xz -O blender.tar.xz
@@ -22,15 +25,18 @@ jobs:
         
     - name: Build Blender Extension
       run: cd extension && ../blender/blender --command extension build
+
     - name: Move zip file
       run: mkdir build_output && mv extension/node_runner-*.zip build_output
+
     - name: Archive Build
       uses: actions/upload-artifact@v4
       with: 
         name: blender-extension-build
         path: build_output/
+
     - name: Create Release
-      uses: ncipollo/release-action@v1.14.0
+      uses: ncipollo/release-action@v1
       with:
         artifacts: "build_output/*.zip"
         body: "First test release"
