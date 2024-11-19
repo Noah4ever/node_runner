@@ -39,6 +39,6 @@ jobs:
       uses: ncipollo/release-action@v1
       with:
         artifacts: "build_output/*.zip"
-        body: "First test release"
+        bodyFile: "release.md"
 
 
