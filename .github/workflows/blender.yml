@@ -13,10 +13,13 @@ jobs:
         wget https://download.blender.org/release/Blender4.2/blender-4.2.4-linux-x64.tar.xz -O blender.tar.xz
         mkdir blender
         tar -xvf blender.tar.xz -C blender --strip-components=1
+    - name: Move files
+      run: mkdir extension && mv __init__.py blender_manifest.toml node_runner_*.py extension/
+        
     - name: Build Blender Extension
-      run: ./blender/blender --command extension build
+      run: cd extension && ../blender/blender --command extension build
     - name: Move zip file
-      run: mkdir build_output && mv node_runner-*.zip build_output
+      run: mkdir build_output && mv extension/node_runner-*.zip build_output
     - name: Archive Build
       uses: actions/upload-artifact@v4
       with: 
