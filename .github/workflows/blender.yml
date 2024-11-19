@@ -14,7 +14,9 @@ jobs:
         mkdir blender
         tar -xvf blender.tar.xz -C blender --strip-components=1
     - name: Build Blender Extension
-      run: ls blender && echo "start build now:" &&  ./blender/blender --command extension build
+      run: ./blender/blender --command extension build
+    - name: Move zip file
+      run: mkdir build_output && mv node_runner-0.9.8.zip build_output
     - name: Archive Build
       uses: actions/upload-artifact@v3
       with: 
