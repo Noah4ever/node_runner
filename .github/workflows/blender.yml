@@ -1,9 +1,14 @@
 name: Build Blender Extension
 
-on: [push]
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
 
 jobs:
   build:
+    name: Build Blender Extension
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -14,7 +19,7 @@ jobs:
         mkdir blender
         tar -xvf blender.tar.xz -C blender --strip-components=1
     - name: Move files
-      run: mkdir extension && mv __init__.py blender_manifest.toml node_runner_*.py extension/
+      run: mkdir extension && mv __init__.py blender_manifest.toml node_runner_*.py LICENSE extension/
         
     - name: Build Blender Extension
       run: cd extension && ../blender/blender --command extension build
@@ -25,5 +30,25 @@ jobs:
       with: 
         name: blender-extension-build
         path: build_output/
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+        asset_path: ./build_output/node_runner-*.zip
+        asset_name: node_runner.zip
+        asset_content_type: application/zip
 
 
