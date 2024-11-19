@@ -14,11 +14,7 @@ jobs:
         mkdir blender
         tar -xvf blender.tar.xz -C blender --strip-components=1
     - name: Build Blender Extension
-      run: |
-        ls
-        ls blender
-        ./blender/blender --command extension build
-        ls 
+      run: ls blender && echo "start build now:" &&  ./blender/blender --command extension build
     - name: Archive Build
       uses: actions/upload-artifact@v3
       with: 
