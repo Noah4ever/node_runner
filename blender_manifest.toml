@@ -8,7 +8,7 @@ maintainer = "Noah Thiering <noah.thiering@gmail.com>"
 
 type = "add-on"
 
-tags = ["Nodes"]
+tags = ["Node", "Material"]
 
 blender_version_min = "4.2.0"
 
