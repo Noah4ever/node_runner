@@ -255,7 +255,17 @@ def deserialize_node(node_data, nodes):
         elif prop_name == "parent" and prop_value in nodes:
             new_node.parent = nodes[prop_value]
         else:
-            setattr(new_node, prop_name, prop_value)
+            try:
+                setattr(new_node, prop_name, prop_value)
+            except (TypeError, AttributeError, EOFError):
+                print(
+                    "[ERROR] Setting attribute on:",
+                    new_node.name,
+                    "with attribute:",
+                    prop_name,
+                    "and attribute value:",
+                    prop_value,
+                )
     return new_node
 
 def get_node_socket_base_type(socket_type):
