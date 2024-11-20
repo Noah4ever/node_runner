@@ -1,1 +1,2 @@
-Updated Version Number
+- Fixed not working in Blender 4.3 (`debug_zone_body_lazy_function_graph()` and `debug_zone_body_lazy_function_graph()` where added to blender)
+- Added `Nodes` tag to blender_manifest
