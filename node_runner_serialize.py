@@ -272,6 +272,7 @@ def serialize_attr(node, attr):
             "and type:",
             type(attr),
         )
+        return None
     return attr
 
 def serialize_node(node):
@@ -320,6 +321,8 @@ def serialize_node(node):
         "socket_value_update",
         "type",
         "update",
+        "debug_zone_body_lazy_function_graph",
+        "debug_zone_lazy_function_graph"
     ]
 
     node_dict = {}
