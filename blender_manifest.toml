@@ -8,6 +8,8 @@ maintainer = "Noah Thiering <noah.thiering@gmail.com>"
 
 type = "add-on"
 
+tags = ["Nodes"]
+
 blender_version_min = "4.2.0"
 
 # https://docs.blender.org/manual/en/dev/advanced/extensions/licenses.html
