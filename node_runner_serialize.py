@@ -259,20 +259,20 @@ def serialize_attr(node, attr):
     }
 
     for data_type, serializer in serializers.items():
-        if isinstance(attr, data_type):
-            return serializer(attr)
+      if isinstance(attr, data_type):
+          return serializer(attr)
     try:
-        pickle.dumps(attr)  # Try to pickle dump to get error message
+      pickle.dumps(attr)  # Try to pickle dump to get error message
     except (pickle.PicklingError, TypeError, AttributeError, EOFError):
-        print(
-            "[ERROR] Serializing error on:",
-            node.name,
-            "with data:",
-            attr,
-            "and type:",
-            type(attr),
-        )
-        return None
+      print(
+        "[ERROR] Serializing error on:",
+        node.name,
+        "with data:",
+        attr,
+        "and type:",
+        type(attr),
+      )
+      return None
     return attr
 
 def serialize_node(node):
@@ -335,6 +335,19 @@ def serialize_node(node):
             # Serialize parent node name for NodeFrame's
             node_dict["parent"] = node.parent.name
             continue
+        if node.bl_idname == "NodeGroupInput" or node.bl_idname == "NodeGroupOutput":
+            if prop == "inputs":
+                node_dict["input_order"] = []
+                for i, puts in enumerate(node.inputs):
+                    if puts.bl_idname == "NodeSocketVirtual":
+                        continue
+                    node_dict["input_order"].append({"type": puts.bl_idname, "name": puts.name, "identifier": puts.identifier})
+            if prop == "outputs":
+                node_dict["output_order"] = []
+                for i, puts in enumerate(node.outputs):
+                    if puts.bl_idname == "NodeSocketVirtual":
+                        continue
+                    node_dict["output_order"].append({"type": puts.bl_idname, "name": puts.name, "identifier": puts.identifier})
         node_dict[prop] = serialize_attr(node, attr)
     node_dict["type"] = node.bl_idname
     node_dict["label"] = node.label
@@ -399,7 +412,7 @@ def encode_data(node_tree, selected_node_names=None):
     """
     # Serialize node tree
     data = serialize_node_tree(node_tree, selected_node_names)
-
+    print(" DADADADA:", data)
     # Compress and encode data
     compress_data = zlib.compress(pickle.dumps(data), 9)
     base64_encoded = base64.b64encode(compress_data).decode("utf-8")

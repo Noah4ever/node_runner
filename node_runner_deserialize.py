@@ -63,7 +63,7 @@ def deserialize_texture_mapping(node, data):
     node.texture_mapping.use_min = data.get("use_min", False)
     node.texture_mapping.vector_type = data.get("vector_type", 0)
 
-def deserialize_inputs(node, data):
+def deserialize_inputs(node, data, node_data, node_tree, node_group_socket_identifier):
     """Deserialize inputs
 
     Check if the node has inputs and set the input values.
@@ -76,6 +76,16 @@ def deserialize_inputs(node, data):
     # Inputs of NodeGroupInput and NodeGroupOutput cannot be set on the node
     # but need to be set on the group instead
     if isinstance(node, (bpy.types.NodeGroupInput, bpy.types.NodeGroupOutput)):
+        if isinstance(node, bpy.types.NodeGroupInput):
+            for input_data in node_data["output_order"]:
+                input_interface_socket: bpy.types.NodeTreeInterfaceSocket = create_socket(
+                    node_tree,
+                    input_data["name"],
+                    input_data["name"] + " Input",
+                    "INPUT",
+                    get_node_socket_base_type(input_data["type"]),
+                )
+                node_group_socket_identifier[input_data["identifier"]] = input_interface_socket.identifier
         return
 
     for i, input_value in enumerate(data):
@@ -87,7 +97,7 @@ def deserialize_inputs(node, data):
         ):
             node.inputs[i].default_value = input_value
 
-def deserialize_outputs(node, data):
+def deserialize_outputs(node, data, node_data, node_tree, node_group_socket_identifier):
     """Deserialize outputs
 
     Check if the node has outputs and set the output values.
@@ -100,6 +110,16 @@ def deserialize_outputs(node, data):
     # Output of NodeGroupInput and NodeGroupOutput cannot be set on the node
     # but need to be set on the group instead
     if isinstance(node, (bpy.types.NodeGroupInput, bpy.types.NodeGroupOutput)):
+        if isinstance(node, bpy.types.NodeGroupOutput):
+            for output_data in node_data["input_order"]:
+                output_interface_socket: bpy.types.NodeTreeInterfaceSocket = create_socket(
+                    node_tree,
+                    output_data["name"],
+                    output_data["name"] + " Output",
+                    "OUTPUT",
+                    get_node_socket_base_type(output_data["type"]),
+                )
+                node_group_socket_identifier[output_data["identifier"]] = output_interface_socket.identifier
         return
 
     for i, output in enumerate(data):
@@ -206,7 +226,7 @@ def deserialize_text(data):
     return text
 
 #pylint: disable=too-many-branches
-def deserialize_node(node_data, nodes):
+def deserialize_node(node_data, node_tree, node_group_socket_identifier):
     """Deserialize node
 
     Loop through all properties of the node data and deserialize them accordingly.
@@ -220,7 +240,7 @@ def deserialize_node(node_data, nodes):
     if node_data["type"] == "NodeUndefined":
         return None
 
-    new_node = nodes.new(type=node_data["type"])  # Create new node
+    new_node = node_tree.nodes.new(type=node_data["type"])  # Create new node
     new_node.label = node_data["label"]  # Set node label
 
     # Node tree has to be done before other properties like inputs and outputs
@@ -234,7 +254,6 @@ def deserialize_node(node_data, nodes):
     for prop_name, prop_value in node_data.items():
         if prop_name in readonly_props:
             continue
-
         # Special handling for complex types
         if prop_name == "color_ramp":
             deserialize_color_ramp(new_node, prop_value)
@@ -247,13 +266,13 @@ def deserialize_node(node_data, nodes):
         elif prop_name == "image":
             deserialize_image(new_node, prop_value)
         elif prop_name == "inputs":
-            deserialize_inputs(new_node, prop_value)
+            deserialize_inputs(new_node, prop_value, node_data, node_tree, node_group_socket_identifier)
         elif prop_name == "outputs":
-            deserialize_outputs(new_node, prop_value)
+            deserialize_outputs(new_node, prop_value, node_data, node_tree, node_group_socket_identifier)
         elif prop_name == "script":
             new_node.script = deserialize_text(prop_value)
-        elif prop_name == "parent" and prop_value in nodes:
-            new_node.parent = nodes[prop_value]
+        elif prop_name == "parent" and prop_value in node_tree.nodes:
+            new_node.parent = node_tree.nodes[prop_value]
         else:
             try:
                 setattr(new_node, prop_name, prop_value)
@@ -292,7 +311,7 @@ def get_node_socket_base_type(socket_type):
             return usable_type
     return usable_type_array[0]
 
-def get_socket_by_identifier(node, identifier, socket_type="INPUT"):
+def get_socket_by_identifier(node, identifier, node_group_socket_identifier, socket_type="INPUT"):
     """Get socket by identifier
 
     Loops through the input or output sockets of a node and
@@ -307,10 +326,12 @@ def get_socket_by_identifier(node, identifier, socket_type="INPUT"):
     """
     # Select input or output sockets
     sockets = node.inputs if socket_type.upper() == "INPUT" else node.outputs
-
+    internal_identifier = identifier
     # Find the socket by identifier
+    if node.bl_idname == "NodeGroupOutput" or node.bl_idname == "NodeGroupInput":
+        internal_identifier = node_group_socket_identifier[identifier]
     for socket in sockets:
-        if socket.identifier == identifier:
+        if socket.identifier == internal_identifier:
             return socket
     return None
 
@@ -333,10 +354,10 @@ def create_socket(node_tree, socket_name, description, in_out, socket_type):
         socket_type=socket_type,
     )
 
-def deserialize_link(node_tree, node_names, link_data):
+def deserialize_link(node_tree, node_names, link_data, node_group_socket_identifier):
     """Deserialize link
 
-    Deserialize the link data and create a new link.
+    Deserialize the link data.
     If the link is connected to a NodeGroupInput or NodeGroupOutput, create
     a new input or output socket on the ShaderNodeGroup.
 
@@ -357,41 +378,41 @@ def deserialize_link(node_tree, node_names, link_data):
     # === From node ===
     from_node = node_names[link_data["from_node"]]
     output_socket = get_socket_by_identifier(
-        from_node, link_data["from_socket_identifier"], "OUTPUT"
+        from_node, link_data["from_socket_identifier"], node_group_socket_identifier, "OUTPUT"
     )
 
-    if from_node.bl_idname == "NodeGroupInput":
-        # Create new input socket on the ShaderNodeGroup
-        if output_socket is None:
-            output_interface_socket: bpy.types.NodeTreeInterfaceSocket = create_socket(
-                node_tree,
-                link_data["from_socket"],
-                link_data["from_socket"] + " Input",
-                "INPUT",
-                get_node_socket_base_type(link_data["to_socket_type"]),
-            )
-            output_socket = get_socket_by_identifier(
-                from_node, output_interface_socket.identifier, "OUTPUT"
-            )
+    # if from_node.bl_idname == "NodeGroupInput":
+    #     # Create new input socket on the ShaderNodeGroup
+    #     if output_socket is None:
+    #         output_interface_socket: bpy.types.NodeTreeInterfaceSocket = create_socket(
+    #             node_tree,
+    #             link_data["from_socket"],
+    #             link_data["from_socket"] + " Input",
+    #             "INPUT",
+    #             get_node_socket_base_type(link_data["to_socket_type"]),
+    #         )
+    #         output_socket = get_socket_by_identifier(
+    #             from_node, output_interface_socket.identifier, "OUTPUT"
+    #         )
 
     # === To node ===
     to_node = node_names[link_data["to_node"]]
     input_socket = get_socket_by_identifier(
-        to_node, link_data["to_socket_identifier"], "INPUT"
+        to_node, link_data["to_socket_identifier"], node_group_socket_identifier, "INPUT"
     )
-    if to_node.bl_idname == "NodeGroupOutput":
-        # Create new output socket on the ShaderNodeGroup
-        if input_socket is None:
-            input_interface_socket: bpy.types.NodeTreeInterfaceSocket = create_socket(
-                node_tree,
-                link_data["to_socket"],
-                link_data["to_socket"] + " Output",
-                "OUTPUT",
-                get_node_socket_base_type(link_data["from_socket_type"]),
-            )
-            input_socket = get_socket_by_identifier(
-                to_node, input_interface_socket.identifier, "INPUT"
-            )
+    # if to_node.bl_idname == "NodeGroupOutput":
+    #     # Create new output socket on the ShaderNodeGroup
+    #     if input_socket is None:
+    #         input_interface_socket: bpy.types.NodeTreeInterfaceSocket = create_socket(
+    #             node_tree,
+    #             link_data["to_socket"],
+    #             link_data["to_socket"] + " Output",
+    #             "OUTPUT",
+    #             get_node_socket_base_type(link_data["from_socket_type"]),
+    #         )
+    #         input_socket = get_socket_by_identifier(
+    #             to_node, input_interface_socket.identifier, "INPUT"
+    #         )
 
     return output_socket, input_socket
 
@@ -456,6 +477,8 @@ def deserialize_node_tree(node_tree, data):
     """
     node_names = {}
 
+    node_group_socket_identifier = {}
+
     node_parent_name = {}
     node_frame_location = {}
 
@@ -465,7 +488,7 @@ def deserialize_node_tree(node_tree, data):
 
     # Save the new node with the node name which is used for linking to get the node
     for node_name, node_data in data["nodes"].items():
-        node_names[node_name] = deserialize_node(node_data, node_tree.nodes)
+        node_names[node_name] = deserialize_node(node_data, node_tree, node_group_socket_identifier)
         # Setting correct location for frames
         if node_names[node_name].parent and isinstance(node_names[node_name].parent,
                                                        bpy.types.NodeFrame):
@@ -477,11 +500,10 @@ def deserialize_node_tree(node_tree, data):
                 # Remove parent from created node if its not inside the current deserialized nodes
                 node_names[node_name].parent = None
 
-
     # Apply links
     for link_data in data["links"]:
         # Deserialize link
-        input_socket, output_socket = deserialize_link(node_tree, node_names, link_data)
+        output_socket, input_socket  = deserialize_link(node_tree, node_names, link_data, node_group_socket_identifier)
         # Create new link
         if input_socket and output_socket:
             node_tree.links.new(input_socket, output_socket)
@@ -508,6 +530,7 @@ def decode_data(base64_encoded, material):
     try:
         decompressed_data = zlib.decompress(base64.b64decode(base64_encoded))
         deserialized_data = pickle.loads(decompressed_data)
+        print(deserialized_data)
     except (zlib.error, pickle.UnpicklingError, binascii.Error):
         return ("CANCELLED", "Decoding error")
     #pylint: disable=broad-exception-caught

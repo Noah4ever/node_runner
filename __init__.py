@@ -7,6 +7,14 @@ encoded string that can be easily shared via a text
 messager or comments in a video.
 """
 
+if "bpy" in locals():
+    # ...so we need to reload our submodule(s) using importlib
+    import importlib
+    if "node_runner_deserialize" in locals():
+        importlib.reload(node_runner_deserialize)
+    if "node_runner_serialize" in locals():
+        importlib.reload(node_runner_serialize)
+
 import bpy
 from . import node_runner_deserialize
 from . import node_runner_serialize
