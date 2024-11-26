@@ -1,12 +1,12 @@
 schema_version = "1.0.0"
 
 id = "node_runner"
-version = "0.9.16"
+version = "0.9.18"
 name = "Node Runner"
 tagline = "Tool to easily import and export shader nodes as a string"
 maintainer = "Noah Thiering <noah.thiering@gmail.com>"
 
-type = "add-on"
+type = "add-on"888888888888876213
 
 tags = ["Node", "Material"]
 
