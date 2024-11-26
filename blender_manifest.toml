@@ -6,7 +6,7 @@ name = "Node Runner"
 tagline = "Tool to easily import and export shader nodes as a string"
 maintainer = "Noah Thiering <noah.thiering@gmail.com>"
 
-type = "add-on"888888888888876213
+type = "add-on"
 
 tags = ["Node", "Material"]
 
