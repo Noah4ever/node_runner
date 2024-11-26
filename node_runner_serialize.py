@@ -346,7 +346,7 @@ def serialize_node(node):
                                                      "identifier": puts.identifier})
             if prop == "outputs":
                 node_dict["output_order"] = []
-                for i, puts in enumerate(node.outputs):
+                for _, puts in enumerate(node.outputs):
                     if puts.bl_idname == "NodeSocketVirtual":
                         continue
                     node_dict["output_order"].append({"type": puts.bl_idname,

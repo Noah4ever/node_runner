@@ -509,6 +509,7 @@ def deserialize_node_tree(node_tree, data, node_group_socket_identifier):
     node_frame_location = {}
 
 
+    # pylint: disable=line-too-long
     node_parent_name, node_frame_location = build_node_parent_name_map(data, node_tree, node_group_socket_identifier)
 
     update_parent_references(data, node_parent_name)
