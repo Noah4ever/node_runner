@@ -338,7 +338,7 @@ def serialize_node(node):
         if node.bl_idname in ("NodeGroupInput", "NodeGroupOutput"):
             if prop == "inputs":
                 node_dict["input_order"] = []
-                for i, puts in enumerate(node.inputs):
+                for _, puts in enumerate(node.inputs):
                     if puts.bl_idname == "NodeSocketVirtual":
                         continue
                     node_dict["input_order"].append({"type": puts.bl_idname,

@@ -442,7 +442,7 @@ def deserialize_link(node_names, link_data, node_group_socket_identifier):
     return output_socket, input_socket
 
 
-def build_node_parent_name_map(data, node_tree):
+def build_node_parent_name_map(data, node_tree, node_group_socket_identifier):
     """
     Build a mapping of old node names to new node names (for frames).
 
@@ -459,7 +459,7 @@ def build_node_parent_name_map(data, node_tree):
     # Create nodes for frames first to ensure they exist
     for node_name, node_data in data["nodes"].items():
         if node_data["type"] == "NodeFrame":
-            new_node = deserialize_node(node_data, node_tree.nodes)
+            new_node = deserialize_node(node_data, node_tree.nodes, node_group_socket_identifier)
             new_node.name = node_data["name"]
 
             # If the name was changed, map the old name to the new name
@@ -509,7 +509,7 @@ def deserialize_node_tree(node_tree, data, node_group_socket_identifier):
     node_frame_location = {}
 
 
-    node_parent_name, node_frame_location = build_node_parent_name_map(data, node_tree)
+    node_parent_name, node_frame_location = build_node_parent_name_map(data, node_tree, node_group_socket_identifier)
 
     update_parent_references(data, node_parent_name)
 

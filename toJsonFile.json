@@ -3,22 +3,30 @@
     "Group": {
       "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
       "height": 100.0,
-      "inputs": [[0.0, 0.0, 0.0], 1.0],
-      "location": [-802.1038818359375, 842.0148315429688],
+      "inputs": [[0.0, 0.0, 0.0]],
+      "location": [440.6558532714844, 442.403564453125],
       "mute": false,
       "name": "Group",
       "node_tree": {
         "nodes": {
           "Group Output": {
-            "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
+            "color": [
+              0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+            ],
             "height": 100.0,
             "input_order": [
-              { "type": "NodeSocketColor", "name": "Color", "identifier": "Socket_2" },
-              { "type": "NodeSocketFloat", "name": "Result", "identifier": "Socket_3" }
+              {
+                "type": "NodeSocketColor",
+                "name": "Color",
+                "identifier": "Socket_0"
+              }
             ],
-            "inputs": [[0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0], 0.0, "None"],
+            "inputs": [
+              [0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0],
+              "None"
+            ],
             "is_active_output": true,
-            "location": [393.48193359375, 5.342341423034668],
+            "location": [412.3465576171875, 130.01089477539062],
             "mute": false,
             "name": "Group Output",
             "output_order": [],
@@ -33,18 +41,23 @@
             "label": ""
           },
           "Group Input": {
-            "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
+            "color": [
+              0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+            ],
             "height": 100.0,
             "input_order": [],
             "inputs": [],
-            "location": [-411.4878234863281, 2.671170711517334],
+            "location": [-460.4986572265625, 64.41981506347656],
             "mute": false,
             "name": "Group Input",
             "output_order": [
-              { "type": "NodeSocketVector", "name": "Vector", "identifier": "Socket_0" },
-              { "type": "NodeSocketFloat", "name": "Value", "identifier": "Socket_1" }
+              {
+                "type": "NodeSocketVector",
+                "name": "Vector",
+                "identifier": "Socket_1"
+              }
             ],
-            "outputs": [[0.0, 0.0, 0.0], 1.0, "None"],
+            "outputs": [[0.0, 0.0, 0.0], "None"],
             "show_options": true,
             "show_preview": false,
             "show_texture": false,
@@ -54,10 +67,230 @@
             "type": "NodeGroupInput",
             "label": ""
           },
-          "Noise Texture": {
-            "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
+          "Group": {
+            "color": [
+              0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+            ],
+            "height": 100.0,
+            "inputs": [[0.0, 0.0, 0.0]],
+            "location": [-132.87271118164062, 253.70843505859375],
+            "mute": false,
+            "name": "Group",
+            "node_tree": {
+              "nodes": {
+                "Group Output": {
+                  "color": [
+                    0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+                  ],
+                  "height": 100.0,
+                  "input_order": [
+                    {
+                      "type": "NodeSocketColor",
+                      "name": "Color",
+                      "identifier": "Socket_1"
+                    }
+                  ],
+                  "inputs": [
+                    [
+                      0.800000011920929, 0.800000011920929, 0.800000011920929,
+                      1.0
+                    ],
+                    "None"
+                  ],
+                  "is_active_output": true,
+                  "location": [530.4431762695312, 2.5324831008911133],
+                  "mute": false,
+                  "name": "Group Output",
+                  "output_order": [],
+                  "outputs": [],
+                  "show_options": true,
+                  "show_preview": false,
+                  "show_texture": false,
+                  "use_custom_color": false,
+                  "warning_propagation": "ALL",
+                  "width": 140.0,
+                  "type": "NodeGroupOutput",
+                  "label": ""
+                },
+                "Group Input": {
+                  "color": [
+                    0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+                  ],
+                  "height": 100.0,
+                  "input_order": [],
+                  "inputs": [],
+                  "location": [-403.7366027832031, -1.2662415504455566],
+                  "mute": false,
+                  "name": "Group Input",
+                  "output_order": [
+                    {
+                      "type": "NodeSocketVector",
+                      "name": "Vector",
+                      "identifier": "Socket_0"
+                    }
+                  ],
+                  "outputs": [[0.0, 0.0, 0.0], "None"],
+                  "show_options": true,
+                  "show_preview": false,
+                  "show_texture": false,
+                  "use_custom_color": false,
+                  "warning_propagation": "ALL",
+                  "width": 140.0,
+                  "type": "NodeGroupInput",
+                  "label": ""
+                },
+                "Noise Texture.001": {
+                  "color": [
+                    0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+                  ],
+                  "color_mapping": {
+                    "blend_color": [
+                      0.800000011920929, 0.800000011920929, 0.800000011920929
+                    ],
+                    "blend_factor": 0.0,
+                    "blend_type": "MIX",
+                    "brightness": 1.0,
+                    "color_ramp": {
+                      "color_mode": "RGB",
+                      "elements": [
+                        { "position": 0.0, "color": [0.0, 0.0, 0.0, 1.0] },
+                        { "position": 1.0, "color": [1.0, 1.0, 1.0, 1.0] }
+                      ],
+                      "hue_interpolation": "NEAR",
+                      "interpolation": "LINEAR"
+                    },
+                    "contrast": 1.0,
+                    "saturation": 1.0,
+                    "use_color_ramp": false
+                  },
+                  "height": 100.0,
+                  "inputs": [
+                    [0.0, 0.0, 0.0],
+                    0.0,
+                    5.0,
+                    2.0,
+                    0.5,
+                    2.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  "location": [-129.05767822265625, 26.026580810546875],
+                  "mute": false,
+                  "name": "Noise Texture.001",
+                  "noise_dimensions": "3D",
+                  "noise_type": "FBM",
+                  "normalize": true,
+                  "outputs": [
+                    0.0,
+                    [
+                      0.800000011920929, 0.800000011920929, 0.800000011920929,
+                      1.0
+                    ]
+                  ],
+                  "show_options": true,
+                  "show_preview": false,
+                  "show_texture": true,
+                  "texture_mapping": {
+                    "mapping": "FLAT",
+                    "mapping_x": "X",
+                    "mapping_y": "Y",
+                    "mapping_z": "Z",
+                    "max": [1.0, 1.0, 1.0],
+                    "min": [0.0, 0.0, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                    "translation": [0.0, 0.0, 0.0],
+                    "use_max": false,
+                    "use_min": false,
+                    "vector_type": "POINT"
+                  },
+                  "use_custom_color": false,
+                  "warning_propagation": "ALL",
+                  "width": 140.0,
+                  "type": "ShaderNodeTexNoise",
+                  "label": ""
+                },
+                "Color Ramp.001": {
+                  "color": [
+                    0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+                  ],
+                  "color_ramp": {
+                    "color_mode": "RGB",
+                    "elements": [
+                      { "position": 0.0, "color": [0.0, 0.0, 0.0, 1.0] },
+                      { "position": 0.5, "color": [0.5, 0.5, 0.5, 1.0] },
+                      { "position": 1.0, "color": [1.0, 1.0, 1.0, 1.0] }
+                    ],
+                    "hue_interpolation": "NEAR",
+                    "interpolation": "LINEAR"
+                  },
+                  "height": 100.0,
+                  "inputs": [0.5],
+                  "location": [129.05767822265625, -26.02655029296875],
+                  "mute": false,
+                  "name": "Color Ramp.001",
+                  "outputs": [
+                    [
+                      0.800000011920929, 0.800000011920929, 0.800000011920929,
+                      1.0
+                    ],
+                    0.0
+                  ],
+                  "show_options": true,
+                  "show_preview": false,
+                  "show_texture": false,
+                  "use_custom_color": false,
+                  "warning_propagation": "ALL",
+                  "width": 240.0,
+                  "type": "ShaderNodeValToRGB",
+                  "label": ""
+                }
+              },
+              "links": [
+                {
+                  "from_node": "Group Input",
+                  "to_node": "Noise Texture.001",
+                  "from_socket": "Vector",
+                  "from_socket_type": "NodeSocketVector",
+                  "from_socket_identifier": "Socket_0",
+                  "to_socket": "Vector",
+                  "to_socket_type": "NodeSocketVector",
+                  "to_socket_identifier": "Vector"
+                },
+                {
+                  "from_node": "Color Ramp.001",
+                  "to_node": "Group Output",
+                  "from_socket": "Color",
+                  "from_socket_type": "NodeSocketColor",
+                  "from_socket_identifier": "Color",
+                  "to_socket": "Color",
+                  "to_socket_type": "NodeSocketColor",
+                  "to_socket_identifier": "Socket_1"
+                }
+              ],
+              "name": "NodeGroup.010"
+            },
+            "outputs": [
+              [0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0]
+            ],
+            "show_options": true,
+            "show_preview": false,
+            "show_texture": false,
+            "use_custom_color": false,
+            "warning_propagation": "ALL",
+            "width": 140.0,
+            "type": "ShaderNodeGroup",
+            "label": ""
+          },
+          "Noise Texture.001": {
+            "color": [
+              0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+            ],
             "color_mapping": {
-              "blend_color": [0.800000011920929, 0.800000011920929, 0.800000011920929],
+              "blend_color": [
+                0.800000011920929, 0.800000011920929, 0.800000011920929
+              ],
               "blend_factor": 0.0,
               "blend_type": "MIX",
               "brightness": 1.0,
@@ -76,13 +309,16 @@
             },
             "height": 100.0,
             "inputs": [[0.0, 0.0, 0.0], 0.0, 5.0, 2.0, 0.5, 2.0, 0.0, 1.0, 0.0],
-            "location": [-144.77244567871094, 223.71054077148438],
+            "location": [-180.573974609375, 35.42003631591797],
             "mute": false,
-            "name": "Noise Texture",
+            "name": "Noise Texture.001",
             "noise_dimensions": "3D",
             "noise_type": "FBM",
             "normalize": true,
-            "outputs": [0.0, [0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0]],
+            "outputs": [
+              0.0,
+              [0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0]
+            ],
             "show_options": true,
             "show_preview": false,
             "show_texture": true,
@@ -106,80 +342,66 @@
             "type": "ShaderNodeTexNoise",
             "label": ""
           },
-          "Clamp": {
-            "clamp_type": "MINMAX",
-            "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
+          "Color Ramp.001": {
+            "color": [
+              0.6079999804496765, 0.6079999804496765, 0.6079999804496765
+            ],
+            "color_ramp": {
+              "color_mode": "RGB",
+              "elements": [
+                { "position": 0.0, "color": [0.0, 0.0, 0.0, 1.0] },
+                { "position": 0.5, "color": [0.5, 0.5, 0.5, 1.0] },
+                { "position": 1.0, "color": [1.0, 1.0, 1.0, 1.0] }
+              ],
+              "hue_interpolation": "NEAR",
+              "interpolation": "LINEAR"
+            },
             "height": 100.0,
-            "inputs": [1.0, 0.0, 1.0],
-            "location": [130.0950164794922, -40.735313415527344],
+            "inputs": [0.5],
+            "location": [33.43009567260742, 26.298660278320312],
             "mute": false,
-            "name": "Clamp",
-            "outputs": [0.0],
+            "name": "Color Ramp.001",
+            "outputs": [
+              [0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0],
+              0.0
+            ],
             "show_options": true,
             "show_preview": false,
             "show_texture": false,
             "use_custom_color": false,
             "warning_propagation": "ALL",
-            "width": 140.0,
-            "type": "ShaderNodeClamp",
+            "width": 240.0,
+            "type": "ShaderNodeValToRGB",
             "label": ""
           }
         },
         "links": [
           {
-            "from_node": "Noise Texture",
-            "to_node": "Clamp",
-            "from_socket": "Fac",
-            "from_socket_type": "NodeSocketFloat",
-            "from_socket_identifier": "Fac",
-            "to_socket": "Value",
-            "to_socket_type": "NodeSocketFloat",
-            "to_socket_identifier": "Value"
+            "from_node": "Group Input",
+            "to_node": "Group",
+            "from_socket": "Vector",
+            "from_socket_type": "NodeSocketVector",
+            "from_socket_identifier": "Socket_1",
+            "to_socket": "Vector",
+            "to_socket_type": "NodeSocketVector",
+            "to_socket_identifier": "Socket_0"
           },
           {
-            "from_node": "Clamp",
-            "to_node": "Group Output",
-            "from_socket": "Result",
-            "from_socket_type": "NodeSocketFloat",
-            "from_socket_identifier": "Result",
-            "to_socket": "Result",
-            "to_socket_type": "NodeSocketFloat",
-            "to_socket_identifier": "Socket_3"
-          },
-          {
-            "from_node": "Noise Texture",
+            "from_node": "Group",
             "to_node": "Group Output",
             "from_socket": "Color",
             "from_socket_type": "NodeSocketColor",
-            "from_socket_identifier": "Color",
+            "from_socket_identifier": "Socket_1",
             "to_socket": "Color",
             "to_socket_type": "NodeSocketColor",
-            "to_socket_identifier": "Socket_2"
-          },
-          {
-            "from_node": "Group Input",
-            "to_node": "Noise Texture",
-            "from_socket": "Value",
-            "from_socket_type": "NodeSocketFloat",
-            "from_socket_identifier": "Socket_1",
-            "to_socket": "Detail",
-            "to_socket_type": "NodeSocketFloat",
-            "to_socket_identifier": "Detail"
-          },
-          {
-            "from_node": "Group Input",
-            "to_node": "Noise Texture",
-            "from_socket": "Vector",
-            "from_socket_type": "NodeSocketVector",
-            "from_socket_identifier": "Socket_0",
-            "to_socket": "Vector",
-            "to_socket_type": "NodeSocketVector",
-            "to_socket_identifier": "Vector"
+            "to_socket_identifier": "Socket_0"
           }
         ],
         "name": "NodeGroup"
       },
-      "outputs": [[0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0], 0.0],
+      "outputs": [
+        [0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0]
+      ],
       "show_options": true,
       "show_preview": false,
       "show_texture": false,
@@ -189,115 +411,153 @@
       "type": "ShaderNodeGroup",
       "label": ""
     },
-    "Brightness/Contrast": {
+    "Noise Texture": {
       "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
+      "color_mapping": {
+        "blend_color": [
+          0.800000011920929, 0.800000011920929, 0.800000011920929
+        ],
+        "blend_factor": 0.0,
+        "blend_type": "MIX",
+        "brightness": 1.0,
+        "color_ramp": {
+          "color_mode": "RGB",
+          "elements": [
+            { "position": 0.0, "color": [0.0, 0.0, 0.0, 1.0] },
+            { "position": 1.0, "color": [1.0, 1.0, 1.0, 1.0] }
+          ],
+          "hue_interpolation": "NEAR",
+          "interpolation": "LINEAR"
+        },
+        "contrast": 1.0,
+        "saturation": 1.0,
+        "use_color_ramp": false
+      },
       "height": 100.0,
-      "inputs": [[1.0, 1.0, 1.0, 1.0], 0.0, 0.0],
-      "location": [-609.321044921875, 855.9681396484375],
+      "inputs": [[0.0, 0.0, 0.0], 0.0, 5.0, 2.0, 0.5, 2.0, 0.0, 1.0, 0.0],
+      "location": [215.14031982421875, 304.86273193359375],
       "mute": false,
-      "name": "Brightness/Contrast",
-      "outputs": [[0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0]],
+      "name": "Noise Texture",
+      "noise_dimensions": "3D",
+      "noise_type": "FBM",
+      "normalize": true,
+      "outputs": [
+        0.0,
+        [0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0]
+      ],
       "show_options": true,
       "show_preview": false,
       "show_texture": false,
+      "texture_mapping": {
+        "mapping": "FLAT",
+        "mapping_x": "X",
+        "mapping_y": "Y",
+        "mapping_z": "Z",
+        "max": [1.0, 1.0, 1.0],
+        "min": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0],
+        "translation": [0.0, 0.0, 0.0],
+        "use_max": false,
+        "use_min": false,
+        "vector_type": "POINT"
+      },
       "use_custom_color": false,
       "warning_propagation": "ALL",
       "width": 140.0,
-      "type": "ShaderNodeBrightContrast",
+      "type": "ShaderNodeTexNoise",
       "label": ""
     },
-    "Camera Data": {
+    "Bump": {
       "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
       "height": 100.0,
-      "inputs": [],
-      "location": [-1001.41552734375, 757.043701171875],
+      "inputs": [1.0, 1.0, 1.0, [0.0, 0.0, 0.0]],
+      "invert": true,
+      "location": [211.6280517578125, 495.77972412109375],
       "mute": false,
-      "name": "Camera Data",
-      "outputs": [[0.0, 0.0, 0.0], 0.0, 0.0],
+      "name": "Bump",
+      "outputs": [[0.0, 0.0, 0.0]],
       "show_options": true,
       "show_preview": false,
       "show_texture": false,
       "use_custom_color": false,
       "warning_propagation": "ALL",
       "width": 140.0,
-      "type": "ShaderNodeCameraData",
+      "type": "ShaderNodeBump",
       "label": ""
     },
-    "Brightness/Contrast.001": {
+    "Principled BSDF.001": {
       "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
+      "distribution": "MULTI_GGX",
       "height": 100.0,
-      "inputs": [[1.0, 1.0, 1.0, 1.0], 0.0, 0.0],
-      "location": [-609.321044921875, 855.9681396484375],
+      "inputs": [
+        [0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0],
+        0.0,
+        0.5,
+        1.4500000476837158,
+        1.0,
+        [0.0, 0.0, 0.0],
+        0.0,
+        0.0,
+        0.0,
+        [1.0, 0.20000000298023224, 0.10000000149011612],
+        0.05000000074505806,
+        1.399999976158142,
+        0.0,
+        0.5,
+        [1.0, 1.0, 1.0, 1.0],
+        0.0,
+        0.0,
+        [0.0, 0.0, 0.0],
+        0.0,
+        0.0,
+        0.029999999329447746,
+        1.5,
+        [1.0, 1.0, 1.0, 1.0],
+        [0.0, 0.0, 0.0],
+        0.0,
+        0.5,
+        [1.0, 1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0, 1.0],
+        0.0,
+        0.0,
+        1.3300000429153442
+      ],
+      "location": [649.935546875, 510.55621337890625],
       "mute": false,
-      "name": "Brightness/Contrast.001",
-      "outputs": [[0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0]],
+      "name": "Principled BSDF.001",
+      "outputs": ["None"],
       "show_options": true,
       "show_preview": false,
       "show_texture": false,
+      "subsurface_method": "RANDOM_WALK",
       "use_custom_color": false,
       "warning_propagation": "ALL",
-      "width": 140.0,
-      "type": "ShaderNodeBrightContrast",
-      "label": ""
-    },
-    "Camera Data.001": {
-      "color": [0.6079999804496765, 0.6079999804496765, 0.6079999804496765],
-      "height": 100.0,
-      "inputs": [],
-      "location": [-1001.41552734375, 757.043701171875],
-      "mute": false,
-      "name": "Camera Data.001",
-      "outputs": [[0.0, 0.0, 0.0], 0.0, 0.0],
-      "show_options": true,
-      "show_preview": false,
-      "show_texture": false,
-      "use_custom_color": false,
-      "warning_propagation": "ALL",
-      "width": 140.0,
-      "type": "ShaderNodeCameraData",
+      "width": 240.0,
+      "type": "ShaderNodeBsdfPrincipled",
       "label": ""
     }
   },
   "links": [
     {
-      "from_node": "Group",
-      "to_node": "Brightness/Contrast",
-      "from_socket": "Color",
-      "from_socket_type": "NodeSocketColor",
-      "from_socket_identifier": "Socket_2",
-      "to_socket": "Color",
-      "to_socket_type": "NodeSocketColor",
-      "to_socket_identifier": "Color"
-    },
-    {
-      "from_node": "Group",
-      "to_node": "Brightness/Contrast",
-      "from_socket": "Result",
-      "from_socket_type": "NodeSocketFloat",
-      "from_socket_identifier": "Socket_3",
-      "to_socket": "Bright",
-      "to_socket_type": "NodeSocketFloat",
-      "to_socket_identifier": "Bright"
-    },
-    {
-      "from_node": "Camera Data",
+      "from_node": "Bump",
       "to_node": "Group",
-      "from_socket": "View Vector",
+      "from_socket": "Normal",
       "from_socket_type": "NodeSocketVector",
-      "from_socket_identifier": "View Vector",
+      "from_socket_identifier": "Normal",
       "to_socket": "Vector",
       "to_socket_type": "NodeSocketVector",
-      "to_socket_identifier": "Socket_0"
+      "to_socket_identifier": "Socket_1"
     },
     {
-      "from_node": "Camera Data",
-      "to_node": "Group",
-      "from_socket": "View Z Depth",
-      "from_socket_type": "NodeSocketFloat",
-      "from_socket_identifier": "View Z Depth",
-      "to_socket": "Value",
-      "to_socket_type": "NodeSocketFloat",
-      "to_socket_identifier": "Socket_1"
+      "from_node": "Group",
+      "to_node": "Principled BSDF.001",
+      "from_socket": "Color",
+      "from_socket_type": "NodeSocketColor",
+      "from_socket_identifier": "Socket_0",
+      "to_socket": "Base Color",
+      "to_socket_type": "NodeSocketColor",
+      "to_socket_identifier": "Base Color"
     }
   ],
   "name": "Shader Nodetree"
