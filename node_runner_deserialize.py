@@ -271,7 +271,8 @@ def deserialize_node(node_data, node_tree, node_group_socket_identifier):
         )
         node_group_socket_identifier["child_" + new_node.node_tree.name] = {}
         deserialize_node_tree(
-            new_node.node_tree, node_data["node_tree"], node_group_socket_identifier["child_" + new_node.node_tree.name]
+            new_node.node_tree, node_data["node_tree"],
+            node_group_socket_identifier["child_" + new_node.node_tree.name]
         )
         node_data.pop("node_tree")
 
@@ -353,7 +354,8 @@ def get_socket_by_identifier(
     Args:
       node: Node to get the socket from
       identifier: Identifier of the socket
-      socket_type:  (Default value = "INPUT")
+      node_group_socket_identifier: Dictionary for Sockets on groups
+      socket_type: (Default value = "INPUT")
     Returns:
       Socket with the given identifier
     """
@@ -362,14 +364,14 @@ def get_socket_by_identifier(
     internal_identifier = identifier
     # Find the socket by identifier
     if (
-        node.bl_idname == "NodeGroupOutput"
-        or node.bl_idname == "NodeGroupInput"
+        node.bl_idname in ("NodeGroupOutput","NodeGroupInput")
     ):
         if identifier in node_group_socket_identifier:
             internal_identifier = node_group_socket_identifier[identifier]
     if node.bl_idname == "ShaderNodeGroup":
         if identifier in node_group_socket_identifier["child_" + node.node_tree.name]:
-            internal_identifier = node_group_socket_identifier["child_" + node.node_tree.name][identifier]
+            key = "child_" + node.node_tree.name
+            internal_identifier = node_group_socket_identifier[key][identifier]
 
 
     for socket in sockets:
@@ -398,7 +400,7 @@ def create_socket(node_tree, socket_name, description, in_out, socket_type):
     )
 
 
-def deserialize_link(node_tree, node_names, link_data, node_group_socket_identifier):
+def deserialize_link(node_names, link_data, node_group_socket_identifier):
     """Deserialize link
 
     Deserialize the link data.
@@ -406,9 +408,9 @@ def deserialize_link(node_tree, node_names, link_data, node_group_socket_identif
     a new input or output socket on the ShaderNodeGroup.
 
     Args:
-      node: Node to deserialize the link on
       node_names: Dictionary with node names
       link_data: Link data to deserialize
+      node_group_socket_identifier: Dictionary for Sockets on groups
     Returns:
       Output and input socket of the link
     """
@@ -428,20 +430,6 @@ def deserialize_link(node_tree, node_names, link_data, node_group_socket_identif
         "OUTPUT",
     )
 
-    # if from_node.bl_idname == "NodeGroupInput":
-    #     # Create new input socket on the ShaderNodeGroup
-    #     if output_socket is None:
-    #         output_interface_socket: bpy.types.NodeTreeInterfaceSocket = create_socket(
-    #             node_tree,
-    #             link_data["from_socket"],
-    #             link_data["from_socket"] + " Input",
-    #             "INPUT",
-    #             get_node_socket_base_type(link_data["to_socket_type"]),
-    #         )
-    #         output_socket = get_socket_by_identifier(
-    #             from_node, output_interface_socket.identifier, "OUTPUT"
-    #         )
-
     # === To node ===
     to_node = node_names[link_data["to_node"]]
     input_socket = get_socket_by_identifier(
@@ -450,19 +438,6 @@ def deserialize_link(node_tree, node_names, link_data, node_group_socket_identif
         node_group_socket_identifier,
         "INPUT",
     )
-    # if to_node.bl_idname == "NodeGroupOutput":
-    #     # Create new output socket on the ShaderNodeGroup
-    #     if input_socket is None:
-    #         input_interface_socket: bpy.types.NodeTreeInterfaceSocket = create_socket(
-    #             node_tree,
-    #             link_data["to_socket"],
-    #             link_data["to_socket"] + " Output",
-    #             "OUTPUT",
-    #             get_node_socket_base_type(link_data["from_socket_type"]),
-    #         )
-    #         input_socket = get_socket_by_identifier(
-    #             to_node, input_interface_socket.identifier, "INPUT"
-    #         )
 
     return output_socket, input_socket
 
@@ -561,7 +536,7 @@ def deserialize_node_tree(node_tree, data, node_group_socket_identifier):
     for link_data in data["links"]:
         # Deserialize link
         output_socket, input_socket = deserialize_link(
-            node_tree, node_names, link_data, node_group_socket_identifier
+            node_names, link_data, node_group_socket_identifier
         )
         print(output_socket, input_socket)
         # Create new link
