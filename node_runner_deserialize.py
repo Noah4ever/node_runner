@@ -22,7 +22,10 @@ def deserialize_color_ramp(node, data):
     node.color_ramp.interpolation = data.get("interpolation", 2)
 
     for i, element_data in enumerate(data["elements"]):
-        element = node.color_ramp.elements[i]
+        if i >= len(node.color_ramp.elements):
+            element = node.color_ramp.elements.new(i)
+        else:
+            element = node.color_ramp.elements[i]
         element.position = element_data["position"]
         element.color = element_data["color"]
 
@@ -266,8 +269,9 @@ def deserialize_node(node_data, node_tree, node_group_socket_identifier):
         new_node.node_tree = bpy.data.node_groups.new(
             node_data["node_tree"]["name"], "ShaderNodeTree"
         )
+        node_group_socket_identifier["child_" + new_node.node_tree.name] = {}
         deserialize_node_tree(
-            new_node.node_tree, node_data["node_tree"], node_group_socket_identifier
+            new_node.node_tree, node_data["node_tree"], node_group_socket_identifier["child_" + new_node.node_tree.name]
         )
         node_data.pop("node_tree")
 
@@ -357,23 +361,18 @@ def get_socket_by_identifier(
     sockets = node.inputs if socket_type.upper() == "INPUT" else node.outputs
     internal_identifier = identifier
     # Find the socket by identifier
-    print("node.bl_idname:", node.bl_idname)
-    print(node_group_socket_identifier)
     if (
         node.bl_idname == "NodeGroupOutput"
         or node.bl_idname == "NodeGroupInput"
-        or node.bl_idname == "ShaderNodeGroup"
     ):
-        internal_identifier = node_group_socket_identifier[identifier]
-        print("internal changed to:", internal_identifier, " from:", identifier)
+        if identifier in node_group_socket_identifier:
+            internal_identifier = node_group_socket_identifier[identifier]
+    if node.bl_idname == "ShaderNodeGroup":
+        if identifier in node_group_socket_identifier["child_" + node.node_tree.name]:
+            internal_identifier = node_group_socket_identifier["child_" + node.node_tree.name][identifier]
+
 
     for socket in sockets:
-        print(
-            "socket.identifier:",
-            socket.identifier,
-            "== internal_identifier:",
-            internal_identifier,
-        )
         if socket.identifier == internal_identifier:
             return socket
     return None
@@ -534,6 +533,7 @@ def deserialize_node_tree(node_tree, data, node_group_socket_identifier):
     node_parent_name = {}
     node_frame_location = {}
 
+
     node_parent_name, node_frame_location = build_node_parent_name_map(data, node_tree)
 
     update_parent_references(data, node_parent_name)
@@ -563,6 +563,7 @@ def deserialize_node_tree(node_tree, data, node_group_socket_identifier):
         output_socket, input_socket = deserialize_link(
             node_tree, node_names, link_data, node_group_socket_identifier
         )
+        print(output_socket, input_socket)
         # Create new link
         if input_socket and output_socket:
             node_tree.links.new(input_socket, output_socket)
