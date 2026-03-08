@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "node_runner"
-version = "1.0.0"
+version = "1.1.2"
 name = "Node Runner"
-tagline = "Import and export shader & geometry nodes as a string"
+tagline = "Import and export nodes as strings"
 maintainer = "Noah Thiering <noah.thiering@gmail.com>"
 
 type = "add-on"

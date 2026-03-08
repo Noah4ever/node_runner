@@ -2,7 +2,9 @@
 Constants used across the Node Runner addon.
 """
 
-# Header prefix appended to exported strings
+# Header prefix appended to exported strings (hash format only).
+# JSON and XML are exported as valid standalone documents with the
+# export name embedded inside the data.
 EXPORT_HEADER = "__NR"
 
 # Node properties to exclude from serialization.
