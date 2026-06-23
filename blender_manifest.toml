@@ -1,16 +1,16 @@
 schema_version = "1.0.0"
 
 id = "node_runner"
-version = "1.4.1"
+version = "1.4.2"
 name = "Node Runner"
-tagline = "Import and export nodes as strings"
+tagline = "Import and export shader, geometry, and compositor nodes"
 maintainer = "Noah Thiering <noah.thiering@gmail.com>"
 
 type = "add-on"
 
 tags = ["Node", "Material", "Geometry Nodes"]
 
-blender_version_min = "4.5.0"
+blender_version_min = "4.2.0"
 
 # https://docs.blender.org/manual/en/dev/advanced/extensions/licenses.html
 license = ["SPDX:GPL-3.0-or-later"]

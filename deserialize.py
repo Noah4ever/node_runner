@@ -18,19 +18,79 @@ from .constants import (
 
 log = logging.getLogger(__name__)
 
+def _node_absolute_location(node):
+    """Return node location in absolute canvas coordinates.
+
+    Blender 4.5 has ``Node.location_absolute``. Blender 4.2 may not expose
+    it on every node, so reconstruct it from ``location`` and parent frames.
+    """
+    loc_abs = getattr(node, "location_absolute", None)
+    if loc_abs is not None:
+        return [float(loc_abs[0]), float(loc_abs[1])]
+
+    loc = getattr(node, "location", (0.0, 0.0))
+    x = float(loc[0]) if len(loc) > 0 else 0.0
+    y = float(loc[1]) if len(loc) > 1 else 0.0
+
+    parent = getattr(node, "parent", None)
+    if parent is not None:
+        parent_abs = _node_absolute_location(parent)
+        x += float(parent_abs[0])
+        y += float(parent_abs[1])
+
+    return [x, y]
+
 # Helpers
 
 
-def get_node_socket_base_type(socket_type: str) -> str:
-    """Map a specific socket type string to its base type.
+def _rna_type_exists(type_name: str) -> bool:
+    """Return True when *type_name* exists in this Blender build."""
+    return bool(type_name and getattr(bpy.types, type_name, None) is not None)
 
-    Only base types can be used with ``NodeTreeInterface.new_socket()``.
-    Returns ``'NodeSocketFloat'`` as last-resort fallback.
+
+def get_node_socket_base_type(socket_type: str) -> str:
+    """Map a specific socket type string to a base type supported here.
+
+    Blender 4.5 can export sockets/nodes that older Blender 4.x builds do
+    not know. Blender 4.2 should not crash just because a newer socket type
+    appears in a payload, so unsupported types gracefully fall back to the
+    closest broad socket family and finally to ``NodeSocketFloat``.
     """
+    socket_type = socket_type or ""
+
     for base in SOCKET_BASE_TYPES:
-        if base in socket_type:
+        if base in socket_type and _rna_type_exists(base):
             return base
+
+    family_fallbacks = (
+        ("Bool", "NodeSocketBool"),
+        ("Boolean", "NodeSocketBool"),
+        ("Vector", "NodeSocketVector"),
+        ("Rotation", "NodeSocketRotation"),
+        ("Matrix", "NodeSocketVector"),
+        ("Int", "NodeSocketInt"),
+        ("Integer", "NodeSocketInt"),
+        ("Color", "NodeSocketColor"),
+        ("Shader", "NodeSocketShader"),
+        ("String", "NodeSocketString"),
+        ("Image", "NodeSocketImage"),
+        ("Object", "NodeSocketObject"),
+        ("Collection", "NodeSocketCollection"),
+        ("Geometry", "NodeSocketGeometry"),
+        ("Menu", "NodeSocketMenu"),
+        ("Material", "NodeSocketMaterial"),
+        ("Texture", "NodeSocketTexture"),
+    )
+    for token, fallback in family_fallbacks:
+        if token in socket_type and _rna_type_exists(fallback):
+            return fallback
+
     return "NodeSocketFloat"
+
+
+
+def _interface_socket_map_key(in_out, identifier):
+    return f"interface:{in_out}:{identifier}"
 
 
 def get_socket_by_identifier(
@@ -55,8 +115,16 @@ def get_socket_by_identifier(
     sockets = node.inputs if direction == "INPUT" else node.outputs
     resolved_id = identifier
 
-    if node.bl_idname in ("NodeGroupOutput", "NodeGroupInput"):
-        resolved_id = socket_id_map.get(identifier, identifier)
+    if node.bl_idname == "NodeGroupInput":
+        resolved_id = socket_id_map.get(
+            _interface_socket_map_key("INPUT", identifier),
+            socket_id_map.get(identifier, identifier),
+        )
+    elif node.bl_idname == "NodeGroupOutput":
+        resolved_id = socket_id_map.get(
+            _interface_socket_map_key("OUTPUT", identifier),
+            socket_id_map.get(identifier, identifier),
+        )
     elif node.bl_idname == "ShaderNodeGroup" and hasattr(node, "node_tree"):
         child_key = "child_" + node.node_tree.name
         if child_key in socket_id_map:
@@ -96,12 +164,257 @@ def create_interface_socket(node_tree, name, description, in_out, socket_type):
     Returns:
         The newly created ``NodeTreeInterfaceSocket``.
     """
-    return node_tree.interface.new_socket(
-        name=name,
-        description=description,
-        in_out=in_out,
-        socket_type=socket_type,
-    )
+    socket_type = get_node_socket_base_type(socket_type)
+    try:
+        return node_tree.interface.new_socket(
+            name=name,
+            description=description,
+            in_out=in_out,
+            socket_type=socket_type,
+        )
+    except (TypeError, RuntimeError, ValueError) as exc:
+        # Last-resort fallback for interface socket types unsupported by
+        # Blender 4.2. This keeps the import usable instead of aborting the
+        # whole node tree. The link/default may not be exact for the skipped
+        # type, but the surrounding graph survives.
+        log.warning(
+            "Could not create interface socket '%s' as %s: %s; using Float",
+            name,
+            socket_type,
+            exc,
+        )
+        return node_tree.interface.new_socket(
+            name=name,
+            description=description,
+            in_out=in_out,
+            socket_type="NodeSocketFloat",
+        )
+
+
+def _apply_group_interface_socket_policy(data):
+    """Reduce Group Input/Output interface data for selected-node imports.
+
+    Node Runner exports selected nodes, not a guaranteed complete node-tree
+    snapshot. In Blender, every Group Input node serializes the whole group
+    interface, even if the selected node island only uses a few of those
+    sockets. Older payloads therefore recreated many unrelated empty inputs
+    on import. Unless a payload explicitly asks for a full interface, keep
+    only sockets referenced by exported links.
+    """
+    nodes = data.get("nodes", {})
+    if not nodes:
+        return
+
+    policy = data.get("interface_socket_policy")
+    # Future-proof escape hatch: a payload may explicitly request the whole
+    # interface. Current Node Runner selected-node exports use linked_only.
+    if policy == "full":
+        return
+
+    used_group_input_outputs = {}
+    used_group_output_inputs = {}
+
+    for link in data.get("links", []):
+        from_name = link.get("from_node")
+        to_name = link.get("to_node")
+        from_node = nodes.get(from_name, {})
+        to_node = nodes.get(to_name, {})
+
+        if from_node.get("type") == "NodeGroupInput":
+            ident = link.get("from_socket_identifier")
+            if ident:
+                used_group_input_outputs.setdefault(from_name, set()).add(ident)
+
+        if to_node.get("type") == "NodeGroupOutput":
+            ident = link.get("to_socket_identifier")
+            if ident:
+                used_group_output_inputs.setdefault(to_name, set()).add(ident)
+
+    # For both new linked_only payloads and legacy 1.4.3 payloads without a
+    # policy field, prune to the sockets that links actually need.
+    for node_name, node_data in nodes.items():
+        if node_data.get("type") == "NodeGroupInput" and "output_order" in node_data:
+            used = used_group_input_outputs.get(node_name, set())
+            node_data["output_order"] = [
+                item
+                for item in node_data.get("output_order", [])
+                if item.get("identifier") in used
+            ]
+        elif node_data.get("type") == "NodeGroupOutput" and "input_order" in node_data:
+            used = used_group_output_inputs.get(node_name, set())
+            node_data["input_order"] = [
+                item
+                for item in node_data.get("input_order", [])
+                if item.get("identifier") in used
+            ]
+
+
+def _socket_sort_key_from_original_order(nodes, socket_entries):
+    """Return a stable key function using the first full-ish Group Input order found."""
+    order = {}
+    idx = 0
+    for node_data in nodes.values():
+        if node_data.get("type") != "NodeGroupInput":
+            continue
+        for item in node_data.get("output_order", []):
+            ident = item.get("identifier")
+            if ident and ident not in order:
+                order[ident] = idx
+                idx += 1
+    return lambda item: order.get(item.get("identifier"), 10_000)
+
+
+def _compact_group_input_nodes(data):
+    """Collapse multiple Group Input nodes into one compact node for snippets.
+
+    Blender does not support a different visible interface per Group Input node:
+    every Group Input instance displays the same node-tree interface. If a
+    selected-node snippet contains several Group Input nodes, creating the union
+    of needed interface sockets makes each instance look like it has many
+    unrelated sockets. For linked-only snippets, keep one Group Input node and
+    redirect all outgoing Group Input links to it.
+    """
+    if data.get("interface_socket_policy") == "full":
+        return
+
+    nodes = data.get("nodes", {})
+    links = data.get("links", [])
+    group_input_names = [
+        name for name, node_data in nodes.items()
+        if node_data.get("type") == "NodeGroupInput"
+    ]
+    if len(group_input_names) <= 1:
+        return
+
+    linked_from = {
+        link.get("from_node")
+        for link in links
+        if nodes.get(link.get("from_node"), {}).get("type") == "NodeGroupInput"
+    }
+    if not linked_from:
+        # Nothing in the pasted snippet actually uses these nodes. Remove them.
+        for name in group_input_names:
+            nodes.pop(name, None)
+        return
+
+    def used_count(name):
+        return sum(1 for link in links if link.get("from_node") == name)
+
+    # Prefer the linked Group Input that contributes the most sockets.
+    # Tie-break by the leftmost position so the resulting node usually stays
+    # close to the source side of the node island.
+    def loc_x(name):
+        loc = nodes.get(name, {}).get("location_absolute") or nodes.get(name, {}).get("location") or [0, 0]
+        try:
+            return float(loc[0])
+        except (TypeError, ValueError, IndexError):
+            return 0.0
+
+    primary = sorted(linked_from, key=lambda n: (-used_count(n), loc_x(n), n))[0]
+    primary_data = nodes[primary]
+
+    # Build the union of only sockets that are required by actual links.
+    used_identifiers = {
+        link.get("from_socket_identifier")
+        for link in links
+        if nodes.get(link.get("from_node"), {}).get("type") == "NodeGroupInput"
+        and link.get("from_socket_identifier")
+    }
+    by_identifier = {}
+    for name in group_input_names:
+        for item in nodes.get(name, {}).get("output_order", []):
+            ident = item.get("identifier")
+            if ident in used_identifiers and ident not in by_identifier:
+                by_identifier[ident] = item
+
+    # Some very old payloads may not have output_order after pruning. Rebuild
+    # minimal entries from the link metadata so links can still resolve.
+    for link in links:
+        if nodes.get(link.get("from_node"), {}).get("type") != "NodeGroupInput":
+            continue
+        ident = link.get("from_socket_identifier")
+        if ident and ident not in by_identifier:
+            by_identifier[ident] = {
+                "type": link.get("from_socket_type", "NodeSocketFloat"),
+                "name": link.get("from_socket", ""),
+                "identifier": ident,
+            }
+
+    sort_key = _socket_sort_key_from_original_order(nodes, by_identifier.values())
+    primary_data["output_order"] = sorted(by_identifier.values(), key=sort_key)
+
+    # Redirect all Group Input links to the single remaining node. The socket
+    # identifier stays the same, so get_socket_by_identifier can still resolve it
+    # through socket_id_map after the interface sockets are created.
+    for link in links:
+        if nodes.get(link.get("from_node"), {}).get("type") == "NodeGroupInput":
+            link["from_node"] = primary
+
+    for name in group_input_names:
+        if name != primary:
+            nodes.pop(name, None)
+
+    data["group_input_policy"] = "single_compact"
+
+
+def _set_interface_socket_default(iface_socket, entry):
+    if "default" not in entry or not hasattr(iface_socket, "default_value"):
+        return
+    try:
+        iface_socket.default_value = entry["default"]
+    except (TypeError, AttributeError, ValueError):
+        log.debug("Could not set default for interface socket '%s'", entry.get("name"))
+
+
+def _hide_group_io_sockets_per_payload_node(node_map, nodes_data, socket_id_map):
+    """Restore the original per-node compact Group Input/Output display.
+
+    Blender stores the node-group interface globally, so every Group Input node
+    receives every group input socket. But the visible/hidden state of each
+    socket on each node instance is local to that node. Selected-node snippets
+    use ``output_order`` / ``input_order`` as the list of sockets that should be
+    visible on that particular Group Input/Output node. Hide the rest so the
+    imported layout matches the source layout instead of producing one very long
+    Group Input node.
+    """
+
+    def mapped_identifiers(entries, in_out):
+        identifiers = set()
+        for entry in entries or []:
+            old_identifier = entry.get("identifier")
+            if not old_identifier:
+                continue
+            map_key = _interface_socket_map_key(in_out, old_identifier)
+            identifiers.add(socket_id_map.get(map_key, socket_id_map.get(old_identifier, old_identifier)))
+        return identifiers
+
+    for old_name, node in node_map.items():
+        node_data = nodes_data.get(old_name, {})
+        node_type = node_data.get("type")
+
+        if node_type == "NodeGroupInput" and hasattr(node, "outputs"):
+            if "output_order" not in node_data:
+                continue
+            visible = mapped_identifiers(node_data.get("output_order", []), "INPUT")
+            for sock in node.outputs:
+                if getattr(sock, "bl_idname", "") == "NodeSocketVirtual":
+                    continue
+                try:
+                    sock.hide = sock.identifier not in visible
+                except (TypeError, AttributeError, ValueError):
+                    pass
+
+        elif node_type == "NodeGroupOutput" and hasattr(node, "inputs"):
+            if "input_order" not in node_data:
+                continue
+            visible = mapped_identifiers(node_data.get("input_order", []), "OUTPUT")
+            for sock in node.inputs:
+                if getattr(sock, "bl_idname", "") == "NodeSocketVirtual":
+                    continue
+                try:
+                    sock.hide = sock.identifier not in visible
+                except (TypeError, AttributeError, ValueError):
+                    pass
 
 
 # Type-specific deserializers
@@ -232,6 +545,67 @@ def deserialize_image(node, data):
     log.info("Image '%s' not found in blend file.", img_name)
 
 
+def resolve_id_reference(payload):
+    """Resolve a serialized Blender ID pointer by type and name."""
+    if not isinstance(payload, dict) or "__id__" not in payload:
+        return payload
+    data_map = {
+        "Scene": bpy.data.scenes,
+        "MovieClip": bpy.data.movieclips,
+        "Mask": bpy.data.masks,
+        "Object": bpy.data.objects,
+        "Collection": bpy.data.collections,
+        "Material": bpy.data.materials,
+        "Image": bpy.data.images,
+        "Texture": bpy.data.textures,
+        "World": bpy.data.worlds,
+    }
+    data_block = data_map.get(payload.get("__id__"))
+    if data_block is None:
+        return None
+    return data_block.get(payload.get("name", ""))
+
+
+def deserialize_output_file_slots(node, data):
+    """Restore compositor File Output node slot layout defensively."""
+    if not isinstance(data, dict):
+        return
+    for collection_name in ("file_slots", "layer_slots"):
+        slots_data = data.get(collection_name)
+        slots = getattr(node, collection_name, None)
+        if slots is None or not isinstance(slots_data, list):
+            continue
+
+        # Match slot count. Blender's File Output node usually starts with one
+        # default slot; add/remove only when the API allows it.
+        try:
+            while len(slots) < len(slots_data):
+                label = slots_data[len(slots)].get("name") or slots_data[len(slots)].get("path") or "Image"
+                slots.new(label)
+        except (TypeError, AttributeError, RuntimeError):
+            pass
+        try:
+            while len(slots) > len(slots_data) and len(slots) > 0:
+                slots.remove(slots[-1])
+        except (TypeError, AttributeError, RuntimeError):
+            pass
+
+        try:
+            pairs = zip(list(slots), slots_data)
+        except (TypeError, RuntimeError):
+            continue
+        for slot, entry in pairs:
+            if not isinstance(entry, dict):
+                continue
+            for attr_name in ("path", "use_node_format", "save_as_render", "name"):
+                if attr_name not in entry:
+                    continue
+                try:
+                    setattr(slot, attr_name, entry[attr_name])
+                except (TypeError, AttributeError, RuntimeError):
+                    pass
+
+
 def deserialize_text_line(text_line, data):
     """Apply text line data."""
     text_line.body = data.get("body", "")
@@ -270,22 +644,21 @@ def deserialize_inputs(node, data, node_data, node_tree, socket_id_map):
     if isinstance(node, (bpy.types.NodeGroupInput, bpy.types.NodeGroupOutput)):
         if isinstance(node, bpy.types.NodeGroupInput):
             for inp in node_data.get("output_order", []):
+                old_identifier = inp.get("identifier")
+                map_key = _interface_socket_map_key("INPUT", old_identifier)
+                if old_identifier and map_key in socket_id_map:
+                    continue
                 iface_socket = create_interface_socket(
                     node_tree,
-                    inp["name"],
-                    inp["name"] + " Input",
+                    inp.get("name", ""),
+                    inp.get("name", "") + " Input",
                     "INPUT",
-                    get_node_socket_base_type(inp["type"]),
+                    get_node_socket_base_type(inp.get("type", "NodeSocketFloat")),
                 )
-                socket_id_map[inp["identifier"]] = iface_socket.identifier
-                if "default" in inp and hasattr(iface_socket, "default_value"):
-                    try:
-                        iface_socket.default_value = inp["default"]
-                    except (TypeError, AttributeError, ValueError):
-                        log.debug(
-                            "Could not set default for interface input '%s'",
-                            inp.get("name"),
-                        )
+                if old_identifier:
+                    socket_id_map[map_key] = iface_socket.identifier
+                    socket_id_map.setdefault(old_identifier, iface_socket.identifier)
+                _set_interface_socket_default(iface_socket, inp)
         return
 
     if not hasattr(node, "inputs"):
@@ -312,22 +685,21 @@ def deserialize_outputs(node, data, node_data, node_tree, socket_id_map):
     if isinstance(node, (bpy.types.NodeGroupInput, bpy.types.NodeGroupOutput)):
         if isinstance(node, bpy.types.NodeGroupOutput):
             for out in node_data.get("input_order", []):
+                old_identifier = out.get("identifier")
+                map_key = _interface_socket_map_key("OUTPUT", old_identifier)
+                if old_identifier and map_key in socket_id_map:
+                    continue
                 iface_socket = create_interface_socket(
                     node_tree,
-                    out["name"],
-                    out["name"] + " Output",
+                    out.get("name", ""),
+                    out.get("name", "") + " Output",
                     "OUTPUT",
-                    get_node_socket_base_type(out["type"]),
+                    get_node_socket_base_type(out.get("type", "NodeSocketFloat")),
                 )
-                socket_id_map[out["identifier"]] = iface_socket.identifier
-                if "default" in out and hasattr(iface_socket, "default_value"):
-                    try:
-                        iface_socket.default_value = out["default"]
-                    except (TypeError, AttributeError, ValueError):
-                        log.debug(
-                            "Could not set default for interface output '%s'",
-                            out.get("name"),
-                        )
+                if old_identifier:
+                    socket_id_map[map_key] = iface_socket.identifier
+                    socket_id_map.setdefault(old_identifier, iface_socket.identifier)
+                _set_interface_socket_default(iface_socket, out)
         return
 
     if not hasattr(node, "outputs"):
@@ -366,17 +738,34 @@ def deserialize_node(node_data, node_tree, socket_id_map, defer_io=False):
     if node_type == "NodeUndefined":
         return (None, {}) if defer_io else None
 
-    new_node = node_tree.nodes.new(type=node_type)
+    try:
+        new_node = node_tree.nodes.new(type=node_type)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        log.warning(
+            "Skipping unsupported node type '%s' in this Blender version: %s",
+            node_type,
+            exc,
+        )
+        return (None, {}) if defer_io else None
     new_node.label = node_data.get("label", "")
 
     # Node tree must be created before inputs/outputs
     if "node_tree" in node_data:
         nt_data = node_data["node_tree"]
         tree_type = nt_data.get("tree_type", "ShaderNodeTree")
-        new_node.node_tree = bpy.data.node_groups.new(nt_data["name"], tree_type)
-        child_key = "child_" + new_node.node_tree.name
-        socket_id_map[child_key] = {}
-        deserialize_node_tree(new_node.node_tree, nt_data, socket_id_map[child_key])
+        try:
+            new_node.node_tree = bpy.data.node_groups.new(nt_data["name"], tree_type)
+        except (RuntimeError, TypeError, ValueError) as exc:
+            log.warning(
+                "Could not create child node group '%s' of type %s: %s",
+                nt_data.get("name", "<unnamed>"),
+                tree_type,
+                exc,
+            )
+        else:
+            child_key = "child_" + new_node.node_tree.name
+            socket_id_map[child_key] = {}
+            deserialize_node_tree(new_node.node_tree, nt_data, socket_id_map[child_key])
         # Don't process node_tree again below
         node_data = {k: v for k, v in node_data.items() if k != "node_tree"}
 
@@ -387,6 +776,7 @@ def deserialize_node(node_data, node_tree, socket_id_map, defer_io=False):
         "texture_mapping": deserialize_texture_mapping,
         "mapping": deserialize_curve_mapping,
         "image": deserialize_image,
+        "file_output_slots": deserialize_output_file_slots,
         "inputs": lambda n, v: deserialize_inputs(
             n, v, node_data, node_tree, socket_id_map
         ),
@@ -431,6 +821,10 @@ def deserialize_node(node_data, node_tree, socket_id_map, defer_io=False):
         elif prop_name in ("label", "type", "name"):
             continue
         else:
+            if isinstance(prop_value, dict) and "__id__" in prop_value:
+                prop_value = resolve_id_reference(prop_value)
+                if prop_value is None:
+                    continue
             try:
                 setattr(new_node, prop_name, prop_value)
             except (TypeError, AttributeError, KeyError) as exc:
@@ -574,6 +968,8 @@ def deserialize_node_tree(node_tree, data, socket_id_map):
         data: Serialized node tree dict.
         socket_id_map: Mutable dict for socket identifier remapping.
     """
+    _apply_group_interface_socket_policy(data)
+
     nodes_data = data.get("nodes", {})
     links_data = data.get("links", [])
     node_map = {}  # old_name -> new Node
@@ -694,6 +1090,11 @@ def deserialize_node_tree(node_tree, data, socket_id_map):
             elif prop_name == "outputs":
                 deserialize_outputs(node, prop_value, nd, node_tree, socket_id_map)
 
+    # Restore per-node visible socket layout for Group Input/Output nodes.
+    # This must run after all interface sockets exist, and before links are
+    # created so hidden sockets are still resolvable by identifier.
+    _hide_group_io_sockets_per_payload_node(node_map, nodes_data, socket_id_map)
+
     # Create links:
     links_created = 0
     for link_data in links_data:
@@ -734,10 +1135,10 @@ def _set_location_from_absolute(node, abs_loc):
     the correct relative location.
     """
     if node.parent:
-        parent_abs = node.parent.location_absolute
+        parent_abs = _node_absolute_location(node.parent)
         node.location = (
-            abs_loc[0] - parent_abs[0],
-            abs_loc[1] - parent_abs[1],
+            float(abs_loc[0]) - float(parent_abs[0]),
+            float(abs_loc[1]) - float(parent_abs[1]),
         )
     else:
         node.location = abs_loc

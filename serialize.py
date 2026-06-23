@@ -15,6 +15,29 @@ from .constants import EXCLUDE_NODE_PROPS, SERIALIZE_READONLY_PROPS, PAIRED_NODE
 
 log = logging.getLogger(__name__)
 
+def _node_absolute_location(node):
+    """Return node location in absolute canvas coordinates.
+
+    Blender 4.5 exposes ``Node.location_absolute`` for this directly, but
+    Blender 4.2 does not expose it on all node classes.  Reconstruct it
+    from ``location`` and parent frames so export still works in 4.2.
+    """
+    loc_abs = getattr(node, "location_absolute", None)
+    if loc_abs is not None:
+        return [float(loc_abs[0]), float(loc_abs[1])]
+
+    loc = getattr(node, "location", (0.0, 0.0))
+    x = float(loc[0]) if len(loc) > 0 else 0.0
+    y = float(loc[1]) if len(loc) > 1 else 0.0
+
+    parent = getattr(node, "parent", None)
+    if parent is not None:
+        parent_abs = _node_absolute_location(parent)
+        x += float(parent_abs[0])
+        y += float(parent_abs[1])
+
+    return [x, y]
+
 
 # Primitive / math type serializers
 
@@ -126,6 +149,43 @@ def serialize_image(image):
     return result
 
 
+def serialize_id_reference(id_block):
+    """Serialize a Blender ID pointer by type and name.
+
+    This is especially useful for compositor nodes such as Render Layers,
+    Movie Clip, and Mask nodes. The importer will resolve the reference by
+    name if the target .blend already contains the same data-block.
+    """
+    if id_block is None:
+        return None
+    return {"__id__": type(id_block).__name__, "name": getattr(id_block, "name", "")}
+
+
+def serialize_output_file_slots(node):
+    """Serialize compositor File Output node slot layout defensively."""
+    result = {}
+    for collection_name in ("file_slots", "layer_slots"):
+        slots = getattr(node, collection_name, None)
+        if slots is None:
+            continue
+        entries = []
+        try:
+            iterator = list(slots)
+        except (TypeError, RuntimeError):
+            continue
+        for slot in iterator:
+            entry = {}
+            for attr_name in ("name", "path", "use_node_format", "save_as_render"):
+                if hasattr(slot, attr_name):
+                    try:
+                        entry[attr_name] = getattr(slot, attr_name)
+                    except (TypeError, AttributeError, RuntimeError):
+                        pass
+            entries.append(entry)
+        result[collection_name] = entries
+    return result
+
+
 def serialize_text_line(text_line):
     """Serialize one TextLine."""
     return {"body": text_line.body}
@@ -155,33 +215,55 @@ def serialize_attr(node, attr):
     Falls back to returning the value directly if it is pickle-safe.
     Logs a warning for unsupported types.
     """
-    # Dispatch table: type -> serializer callable
+    # Dispatch table: type -> serializer callable. Build it defensively so
+    # Blender 4.2 does not fail if a class name from a newer Blender build is
+    # absent.
     _dispatch = {
         mathutils.Color: serialize_color,
         mathutils.Vector: serialize_vector,
         mathutils.Euler: serialize_euler,
-        bpy.types.ColorRamp: lambda _: serialize_color_ramp(node),
-        bpy.types.NodeTree: lambda _: serialize_node_tree(node.node_tree),
-        bpy.types.ColorMapping: lambda _: serialize_color_mapping(node),
-        bpy.types.TexMapping: lambda _: serialize_texture_mapping(node),
-        bpy.types.CurveMapping: lambda _: serialize_curve_mapping(node),
-        bpy.types.CurveMap: lambda d: serialize_curve_map(node, d),
-        bpy.types.CurveMapPoint: lambda d: serialize_curve_map_point(node, d),
-        bpy.types.Image: serialize_image,
-        bpy.types.ImageUser: lambda _: {},
-        bpy.types.NodeFrame: lambda _: {},  # Handled separately
-        bpy.types.Text: lambda _: serialize_text(node.script),
-        bpy.types.Object: lambda _: None,
-        bpy.types.NodeSocketStandard: lambda d: (
+    }
+
+    def _add_type(type_name, serializer):
+        data_type = getattr(bpy.types, type_name, None)
+        if data_type is not None:
+            _dispatch[data_type] = serializer
+
+    _add_type("ColorRamp", lambda _: serialize_color_ramp(node))
+    _add_type("NodeTree", lambda _: serialize_node_tree(node.node_tree))
+    _add_type("ColorMapping", lambda _: serialize_color_mapping(node))
+    _add_type("TexMapping", lambda _: serialize_texture_mapping(node))
+    _add_type("CurveMapping", lambda _: serialize_curve_mapping(node))
+    _add_type("CurveMap", lambda d: serialize_curve_map(node, d))
+    _add_type("CurveMapPoint", lambda d: serialize_curve_map_point(node, d))
+    _add_type("Image", serialize_image)
+    for _id_type in (
+        "Scene",
+        "MovieClip",
+        "Mask",
+        "Object",
+        "Collection",
+        "Material",
+        "Texture",
+        "World",
+    ):
+        _add_type(_id_type, serialize_id_reference)
+    _add_type("ImageUser", lambda _: {})
+    _add_type("NodeFrame", lambda _: {})  # Handled separately
+    _add_type("Text", lambda _: serialize_text(node.script))
+    _add_type(
+        "NodeSocketStandard",
+        lambda d: (
             serialize_attr(node, d.default_value)
             if hasattr(d, "default_value")
             else None
         ),
-        bpy.types.bpy_prop_collection: lambda d: [
-            serialize_attr(node, el) for el in d.values()
-        ],
-        bpy.types.bpy_prop_array: lambda d: [serialize_attr(node, el) for el in d],
-    }
+    )
+    _add_type(
+        "bpy_prop_collection",
+        lambda d: [serialize_attr(node, el) for el in d.values()],
+    )
+    _add_type("bpy_prop_array", lambda d: [serialize_attr(node, el) for el in d])
 
     for data_type, serializer in _dispatch.items():
         if isinstance(attr, data_type):
@@ -216,6 +298,129 @@ def _socket_entry(node, s, iface_by_id):
             except (TypeError, ValueError):
                 pass
     return entry
+
+
+def _prune_group_interface_orders_to_exported_links(data):
+    """Trim Group Input/Output interface orders to linked sockets only.
+
+    A Group Input node in Blender shows every INPUT socket of the group
+    interface, regardless of how many of those sockets the selected snippet
+    actually uses. This keeps copied snippets compact on paste.
+    """
+    nodes = data.get("nodes", {})
+    used_group_input_outputs = {}
+    used_group_output_inputs = {}
+
+    for link in data.get("links", []):
+        from_name = link.get("from_node")
+        to_name = link.get("to_node")
+        from_node = nodes.get(from_name, {})
+        to_node = nodes.get(to_name, {})
+
+        if from_node.get("type") == "NodeGroupInput":
+            ident = link.get("from_socket_identifier")
+            if ident:
+                used_group_input_outputs.setdefault(from_name, set()).add(ident)
+
+        if to_node.get("type") == "NodeGroupOutput":
+            ident = link.get("to_socket_identifier")
+            if ident:
+                used_group_output_inputs.setdefault(to_name, set()).add(ident)
+
+    for node_name, node_data in nodes.items():
+        node_type = node_data.get("type")
+        if node_type == "NodeGroupInput":
+            used = used_group_input_outputs.get(node_name, set())
+            if "output_order" in node_data:
+                node_data["output_order"] = [
+                    item
+                    for item in node_data.get("output_order", [])
+                    if item.get("identifier") in used
+                ]
+        elif node_type == "NodeGroupOutput":
+            used = used_group_output_inputs.get(node_name, set())
+            if "input_order" in node_data:
+                node_data["input_order"] = [
+                    item
+                    for item in node_data.get("input_order", [])
+                    if item.get("identifier") in used
+                ]
+
+
+def _compact_group_input_nodes_in_payload(data):
+    """Collapse selected-snippet Group Input instances into one payload node."""
+    nodes = data.get("nodes", {})
+    links = data.get("links", [])
+    group_input_names = [
+        name for name, node_data in nodes.items()
+        if node_data.get("type") == "NodeGroupInput"
+    ]
+    if len(group_input_names) <= 1:
+        return
+
+    linked_from = {
+        link.get("from_node")
+        for link in links
+        if nodes.get(link.get("from_node"), {}).get("type") == "NodeGroupInput"
+    }
+    if not linked_from:
+        for name in group_input_names:
+            nodes.pop(name, None)
+        return
+
+    def used_count(name):
+        return sum(1 for link in links if link.get("from_node") == name)
+
+    def loc_x(name):
+        loc = nodes.get(name, {}).get("location_absolute") or nodes.get(name, {}).get("location") or [0, 0]
+        try:
+            return float(loc[0])
+        except (TypeError, ValueError, IndexError):
+            return 0.0
+
+    primary = sorted(linked_from, key=lambda n: (-used_count(n), loc_x(n), n))[0]
+    primary_data = nodes[primary]
+
+    used_identifiers = {
+        link.get("from_socket_identifier")
+        for link in links
+        if nodes.get(link.get("from_node"), {}).get("type") == "NodeGroupInput"
+        and link.get("from_socket_identifier")
+    }
+
+    order = {}
+    i = 0
+    by_identifier = {}
+    for name in group_input_names:
+        for item in nodes.get(name, {}).get("output_order", []):
+            ident = item.get("identifier")
+            if ident and ident not in order:
+                order[ident] = i
+                i += 1
+            if ident in used_identifiers and ident not in by_identifier:
+                by_identifier[ident] = item
+
+    for link in links:
+        if nodes.get(link.get("from_node"), {}).get("type") != "NodeGroupInput":
+            continue
+        ident = link.get("from_socket_identifier")
+        if ident and ident not in by_identifier:
+            by_identifier[ident] = {
+                "type": link.get("from_socket_type", "NodeSocketFloat"),
+                "name": link.get("from_socket", ""),
+                "identifier": ident,
+            }
+        link["from_node"] = primary
+
+    primary_data["output_order"] = sorted(
+        by_identifier.values(), key=lambda item: order.get(item.get("identifier"), 10_000)
+    )
+
+    for name in group_input_names:
+        if name != primary:
+            nodes.pop(name, None)
+
+    data["group_input_policy"] = "single_compact"
 
 
 def serialize_node(node):
@@ -276,8 +481,15 @@ def serialize_node(node):
     node_dict["type"] = node.bl_idname
     node_dict["label"] = node.label
 
-    # Store absolute location for correct nested-frame positioning
-    node_dict["location_absolute"] = list(node.location_absolute)
+    # Store absolute location for correct nested-frame positioning.
+    # Blender 4.2 does not expose node.location_absolute on all nodes.
+    node_dict["location_absolute"] = _node_absolute_location(node)
+
+    # Compositor File Output nodes store their per-input slot names/paths in
+    # a collection, not in normal socket default values. Preserve that layout
+    # so pasted compositor setups keep their output passes organized.
+    if node.bl_idname == "CompositorNodeOutputFile":
+        node_dict["file_output_slots"] = serialize_output_file_slots(node)
 
     # Store paired output reference for zone nodes (repeat, simulation, etc.)
     if node.bl_idname in PAIRED_NODE_TYPES:
@@ -349,6 +561,20 @@ def serialize_node_tree(node_tree, selected_node_names=None):
                     "to_socket_identifier": link.to_socket.identifier,
                 }
             )
+
+    # Node Runner exports selected nodes. For Group Input/Output nodes,
+    # Blender exposes the entire group interface on every instance. If we
+    # serialize the entire interface for a small selected-node export, importing
+    # it recreates many unrelated/empty sockets. Keep only interface sockets
+    # actually used by the exported links.
+    if selected_node_names is not None:
+        data["interface_socket_policy"] = "linked_only"
+        # Keep each Group Input node as a real layout node. Blender's group
+        # interface is global, but individual Group Input socket visibility is
+        # per-node, so the importer can recreate the original compact scattered
+        # Group Input layout by hiding outputs that do not belong to each node.
+        _prune_group_interface_orders_to_exported_links(data)
+        data["group_input_policy"] = "per_node_hidden_outputs"
 
     log.debug("Serialized %d links", len(data["links"]))
     return data

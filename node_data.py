@@ -1,7 +1,7 @@
 """Node data tables for Node Runner.
 
 Provides default values, socket names, and property defaults for Blender
-shader nodes.  When running inside Blender, call ``refresh()`` at addon
+shader, geometry, and compositor nodes.  When running inside Blender, call ``refresh()`` at addon
 registration to build tables from the live node system. This means the
 addon automatically adapts when Blender adds or changes node sockets.
 
@@ -738,8 +738,8 @@ def _introspect_tree(bpy, tree, prefix):
 def refresh():
     """Query Blender for current node defaults.
 
-    Call this at addon registration.  Discovers all ShaderNode and
-    GeometryNode types, creates temporary instances, and reads their
+    Call this at addon registration.  Discovers all ShaderNode, GeometryNode, and
+    CompositorNode types, creates temporary instances, and reads their
     default input values, socket names, and property defaults.  The
     module-level dicts ``NODE_DEFAULTS``, ``INPUT_NAMES``, and
     ``OUTPUT_NAMES`` are updated in place so existing imports see the
@@ -795,6 +795,36 @@ def refresh():
         finally:
             try:
                 bpy.data.node_groups.remove(gn_tree)
+            except (RuntimeError, AttributeError):
+                pass
+
+    # Compositor nodes — instantiated in a temporary scene compositor tree.
+    scene = None
+    old_scene = None
+    try:
+        old_scene = getattr(bpy.context.window, "scene", None) if getattr(bpy.context, "window", None) else None
+        scene = bpy.data.scenes.new("_nr_tmp_compositor")
+        if getattr(bpy.context, "window", None) is not None:
+            bpy.context.window.scene = scene
+        scene.use_nodes = True
+        tree = scene.node_tree
+        for n in list(tree.nodes):
+            tree.nodes.remove(n)
+        d, i, o = _introspect_tree(bpy, tree, "CompositorNode")
+        new_defaults.update(d)
+        new_input_names.update(i)
+        new_output_names.update(o)
+    except (RuntimeError, AttributeError, TypeError):
+        pass
+    finally:
+        try:
+            if old_scene is not None and getattr(bpy.context, "window", None) is not None:
+                bpy.context.window.scene = old_scene
+        except (RuntimeError, AttributeError):
+            pass
+        if scene is not None:
+            try:
+                bpy.data.scenes.remove(scene)
             except (RuntimeError, AttributeError):
                 pass
 

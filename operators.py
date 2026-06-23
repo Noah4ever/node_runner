@@ -40,7 +40,7 @@ def _blender_version_string():
     return f"{v[0]}.{v[1]}.{v[2]}"
 
 
-_SUPPORTED_TREE_TYPES = {"ShaderNodeTree", "GeometryNodeTree"}
+_SUPPORTED_TREE_TYPES = {"ShaderNodeTree", "GeometryNodeTree", "CompositorNodeTree"}
 
 # Object types that can carry a Geometry Nodes modifier. Used when the
 # user invokes Import on an empty GN editor so we know whether we can
@@ -51,7 +51,7 @@ _GN_OBJECT_TYPES = frozenset(
 
 
 def _supported_editor_poll(context):
-    """True when the active editor is a Shader or Geometry Nodes editor.
+    """True when the active editor is a Shader, Geometry, or Compositor Nodes editor.
 
     Does NOT require an existing tree — Import will auto-create one
     when the editor is empty.
@@ -65,7 +65,7 @@ def _supported_editor_poll(context):
 
 
 def _supported_tree_poll(context):
-    """True when the active editor has a live Shader or GN tree.
+    """True when the active editor has a live Shader, Geometry, or Compositor node tree.
 
     Stricter than ``_supported_editor_poll`` — used by Export, which
     cannot run without an existing tree to read nodes from.
@@ -96,24 +96,22 @@ def _find_node_editor_tree(context, tree_type):
 
 
 def _ensure_default_tree(operator, context, payload_tree_type):
-    """Create a default tree of *payload_tree_type* and attach it to the
-    active object so Import has somewhere to deserialize into.
+    """Create or enable a default tree of *payload_tree_type* so Import has somewhere to deserialize into.
 
     Returns the new ``NodeTree``, or ``None`` if attachment isn't
     possible (no active object, wrong object type for GN, etc.).
     """
     obj = getattr(context, "active_object", None)
-    if obj is None:
-        operator.report(
-            {"ERROR"},
-            "No active object to attach a new tree to. "
-            "Select an object and try again.",
-        )
-        return None
-
     tree_name = "Imported Nodes"
 
     if payload_tree_type == "GeometryNodeTree":
+        if obj is None:
+            operator.report(
+                {"ERROR"},
+                "No active object to attach a new Geometry Nodes modifier to. "
+                "Select an object and try again.",
+            )
+            return None
         if obj.type not in _GN_OBJECT_TYPES:
             operator.report(
                 {"ERROR"},
@@ -135,7 +133,16 @@ def _ensure_default_tree(operator, context, payload_tree_type):
         gi.location = (-200, 0)
         go = ng.nodes.new("NodeGroupOutput")
         go.location = (200, 0)
-        ng.links.new(gi.outputs[0], go.inputs[0])
+        # Blender 4.x documents NodeLinks.new(input_socket, output_socket).
+        # Some older examples use output,input, so try the documented order
+        # first and fall back without aborting the import.
+        try:
+            ng.links.new(go.inputs[0], gi.outputs[0])
+        except (RuntimeError, TypeError, ValueError):
+            try:
+                ng.links.new(gi.outputs[0], go.inputs[0])
+            except (RuntimeError, TypeError, ValueError):
+                log.debug("Could not seed Geometry passthrough link")
         mod = obj.modifiers.new(name="GeometryNodes", type="NODES")
         mod.node_group = ng
         operator.report(
@@ -145,6 +152,13 @@ def _ensure_default_tree(operator, context, payload_tree_type):
         return ng
 
     if payload_tree_type == "ShaderNodeTree":
+        if obj is None:
+            operator.report(
+                {"ERROR"},
+                "No active object to attach a new material to. "
+                "Select an object and try again.",
+            )
+            return None
         if not hasattr(obj.data, "materials"):
             operator.report(
                 {"ERROR"},
@@ -168,6 +182,23 @@ def _ensure_default_tree(operator, context, payload_tree_type):
             f"Created new material on '{obj.name}'",
         )
         return mat.node_tree
+
+    if payload_tree_type == "CompositorNodeTree":
+        scene = getattr(context, "scene", None)
+        if scene is None:
+            operator.report({"ERROR"}, "No active scene for compositor nodes")
+            return None
+        try:
+            scene.use_nodes = True
+        except (TypeError, AttributeError, RuntimeError) as exc:
+            operator.report({"ERROR"}, f"Could not enable compositor nodes: {exc}")
+            return None
+        tree = getattr(scene, "node_tree", None)
+        if tree is None:
+            operator.report({"ERROR"}, "Could not access the scene compositor node tree")
+            return None
+        operator.report({"INFO"}, "Enabled compositor nodes for the active scene")
+        return tree
 
     return None
 
@@ -300,6 +331,11 @@ def _do_import(operator, context, raw, mouse_x=None, mouse_y=None):
         bpy.types.WindowManager.nr_pending_data = data
         bpy.types.WindowManager.nr_pending_mouse = (mouse_x, mouse_y)
         bpy.types.WindowManager.nr_pending_auto_created = auto_created
+        # Keep a direct reference to the target tree. In Blender 4.2 the
+        # node editor may not have refreshed immediately after we auto-create
+        # a material/modifier, so relying only on context.space_data.edit_tree
+        # can make the confirmation step import into None.
+        bpy.types.WindowManager.nr_pending_edit_tree = edit_tree
         return bpy.ops.node_runner.confirm_import(
             "INVOKE_DEFAULT",
             export_version=export_version,
@@ -346,39 +382,40 @@ def _apply_import(
     data.pop("export_name", None)
     data.pop("blender_version", None)
 
-    # When we auto-created the tree, the seeded Group Input/Output and
-    # passthrough Geometry interface socket exist only so the modifier
-    # could bind to a valid tree. If the payload brings its own Group
-    # I/O, clear the seeds so they don't end up as duplicates. If the
-    # payload only contains body nodes (a partial export), keep the
-    # seeds — otherwise the tree would have no Group Output and the
-    # modifier would error.
+    # When we auto-created/auto-enabled the tree, remove Blender's seed
+    # nodes only where they are implementation scaffolding. Geometry Nodes
+    # needs a temporary passthrough group to bind a modifier; Compositor
+    # Nodes creates Render Layers + Composite when scene.use_nodes is enabled.
     if auto_created:
-        node_types = {
-            nd.get("type") for nd in data.get("nodes", {}).values()
-        }
-        payload_has_output = "NodeGroupOutput" in node_types
-        payload_has_input = "NodeGroupInput" in node_types
-        if payload_has_output:
+        if edit_tree.bl_idname == "CompositorNodeTree":
             for node in list(edit_tree.nodes):
-                if node.bl_idname == "NodeGroupOutput":
-                    edit_tree.nodes.remove(node)
-        if payload_has_input:
-            for node in list(edit_tree.nodes):
-                if node.bl_idname == "NodeGroupInput":
-                    edit_tree.nodes.remove(node)
-        # Strip seeded interface sockets that the payload's Group I/O
-        # will recreate. Only the matched directions are wiped.
-        if hasattr(edit_tree, "interface") and (
-            payload_has_input or payload_has_output
-        ):
-            for item in list(edit_tree.interface.items_tree):
-                if item.item_type != "SOCKET":
-                    continue
-                if item.in_out == "INPUT" and payload_has_input:
-                    edit_tree.interface.remove(item)
-                elif item.in_out == "OUTPUT" and payload_has_output:
-                    edit_tree.interface.remove(item)
+                edit_tree.nodes.remove(node)
+        else:
+            node_types = {
+                nd.get("type") for nd in data.get("nodes", {}).values()
+            }
+            payload_has_output = "NodeGroupOutput" in node_types
+            payload_has_input = "NodeGroupInput" in node_types
+            if payload_has_output:
+                for node in list(edit_tree.nodes):
+                    if node.bl_idname == "NodeGroupOutput":
+                        edit_tree.nodes.remove(node)
+            if payload_has_input:
+                for node in list(edit_tree.nodes):
+                    if node.bl_idname == "NodeGroupInput":
+                        edit_tree.nodes.remove(node)
+            # Strip seeded interface sockets that the payload's Group I/O
+            # will recreate. Only the matched directions are wiped.
+            if hasattr(edit_tree, "interface") and (
+                payload_has_input or payload_has_output
+            ):
+                for item in list(edit_tree.interface.items_tree):
+                    if item.item_type != "SOCKET":
+                        continue
+                    if item.in_out == "INPUT" and payload_has_input:
+                        edit_tree.interface.remove(item)
+                    elif item.in_out == "OUTPUT" and payload_has_output:
+                        edit_tree.interface.remove(item)
 
     # Deselect all existing nodes
     for node in edit_tree.nodes:
@@ -851,6 +888,7 @@ class NODE_RUNNER_OT_confirm_import(bpy.types.Operator):
         auto_created = getattr(
             bpy.types.WindowManager, "nr_pending_auto_created", False
         )
+        edit_tree = getattr(bpy.types.WindowManager, "nr_pending_edit_tree", None)
 
         if data is None:
             self.report({"ERROR"}, "No pending import data")
@@ -861,9 +899,12 @@ class NODE_RUNNER_OT_confirm_import(bpy.types.Operator):
         del bpy.types.WindowManager.nr_pending_mouse
         if hasattr(bpy.types.WindowManager, "nr_pending_auto_created"):
             del bpy.types.WindowManager.nr_pending_auto_created
+        if hasattr(bpy.types.WindowManager, "nr_pending_edit_tree"):
+            del bpy.types.WindowManager.nr_pending_edit_tree
 
         return _apply_import(
-            self, context, data, mouse[0], mouse[1], auto_created=auto_created,
+            self, context, data, mouse[0], mouse[1],
+            edit_tree=edit_tree, auto_created=auto_created,
         )
 
 
@@ -934,6 +975,12 @@ def register():
 
 
 def unregister():
-    bpy.types.NODE_MT_context_menu.remove(menu_draw)
+    try:
+        bpy.types.NODE_MT_context_menu.remove(menu_draw)
+    except (AttributeError, ValueError, RuntimeError):
+        pass
     for cls in reversed(_classes):
-        bpy.utils.unregister_class(cls)
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError:
+            pass
