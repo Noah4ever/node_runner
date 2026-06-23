@@ -3,7 +3,7 @@ schema_version = "1.0.0"
 id = "node_runner"
 version = "1.4.2"
 name = "Node Runner"
-tagline = "Import and export shader, geometry, and compositor nodes as strings"
+tagline = "Import and export shader, geometry, and compositor nodes"
 maintainer = "Noah Thiering <noah.thiering@gmail.com>"
 
 type = "add-on"
