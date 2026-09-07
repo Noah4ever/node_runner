@@ -34,6 +34,14 @@ class NODE_RUNNER_RepoItem(bpy.types.PropertyGroup):
             "Branch or tag to read from. Ignored when the URL already names one"
         ),
     )  # type: ignore
+    private: bpy.props.BoolProperty(
+        name="Private Repository",
+        default=False,
+        description=(
+            "Authenticate with an access token. Leave this off for public "
+            "repositories - they need no credentials"
+        ),
+    )  # type: ignore
     token: bpy.props.StringProperty(
         name="Token",
         subtype="PASSWORD",
@@ -72,6 +80,13 @@ class NODE_RUNNER_preferences(bpy.types.AddonPreferences):
         header.operator("node_runner.library_refresh", text="", icon="FILE_REFRESH")
         header.operator("node_runner.library_clear_cache", text="", icon="TRASH")
 
+        row = layout.row()
+        row.operator(
+            "node_runner.library_index_folder",
+            text="Generate config.json for a Folder...",
+            icon="FILE_REFRESH",
+        )
+
         if not self.repos:
             box = layout.box()
             box.label(text="No repositories yet - press + to add one", icon="INFO")
@@ -95,7 +110,9 @@ class NODE_RUNNER_preferences(bpy.types.AddonPreferences):
         column.use_property_decorate = False
         column.prop(repo, "url")
         column.prop(repo, "branch")
-        column.prop(repo, "token")
+        column.prop(repo, "private")
+        if repo.private:
+            column.prop(repo, "token")
 
         # Show what the URL actually resolved to - the whole point of
         # accepting several input forms is that mistakes stay visible.
@@ -161,7 +178,7 @@ def repo_specs(context):
             "name": repo.name.strip(),
             "url": repo.url.strip(),
             "branch": repo.branch.strip(),
-            "token": repo.token.strip(),
+            "token": repo.token.strip() if repo.private else "",
             "enabled": bool(repo.enabled),
         }
         for repo in prefs.repos

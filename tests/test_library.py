@@ -545,3 +545,123 @@ def test_publish_then_parse_round_trip():
     assert error is None
     assert config["entries"][0]["id"] == "climbing-vine"
     assert config["entries"][0]["tags"] == ["vine", "plant"]
+
+
+# Indexing a folder of exports that already exist on disk
+
+
+@pytest.mark.parametrize(
+    "stem,expected",
+    [
+        ("vine_nodes", "Vine Nodes"),
+        ("anime_grass", "Anime Grass"),
+        ("instance_on_weightpaint", "Instance On Weightpaint"),
+        ("gates", "Gates"),
+        # Existing capitals are kept rather than mangled to "Gn Fencebuilder".
+        ("GN_FenceBuilder", "GN FenceBuilder"),
+        ("PathFromCurve", "PathFromCurve"),
+        ("a--b__c", "A B C"),
+        ("", ""),
+    ],
+)
+def test_prettify_stem(stem, expected):
+    assert library.prettify_stem(stem) == expected
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("a.json", True), ("nodes/a.json", True), ("a.txt", True),
+        ("a.xml", True), ("a.nr", True), ("A.JSON", True),
+        ("config.json", False), ("nodes/config.json", False),
+        ("README.md", False), ("LICENSE", False), ("a.blend", False),
+    ],
+)
+def test_is_export_candidate(path, expected):
+    assert library.is_export_candidate(path) is expected
+
+
+def test_entry_from_payload_uses_the_export_name():
+    entry = library.entry_from_payload(
+        "vine_nodes.json",
+        {"export_name": "Vines", "tree_type": "GeometryNodeTree",
+         "blender_version": "5.2.0"},
+        "vine_nodes",
+    )
+    assert entry["id"] == "vine-nodes"
+    assert entry["name"] == "Vines"
+    assert entry["file"] == "vine_nodes.json"
+    assert entry["tree_type"] == "GeometryNodeTree"
+    assert entry["blender_version"] == "5.2.0"
+
+
+@pytest.mark.parametrize("generic", ["MyNodes", "", "  ", "Imported Nodes", "nodes"])
+def test_entry_from_payload_ignores_default_export_names(generic):
+    """"MyNodes" carries no information; the file name is a better title."""
+    entry = library.entry_from_payload(
+        "GN_FenceBuilder.json", {"export_name": generic}, "GN_FenceBuilder"
+    )
+    assert entry["name"] == "GN FenceBuilder"
+
+
+def test_entry_from_payload_ids_come_from_the_file_name():
+    """Two setups exported under the same name must not collide."""
+    a = library.entry_from_payload("Rope.json", {"export_name": "Rope"}, "Rope")
+    b = library.entry_from_payload(
+        "rope_nodes.json", {"export_name": "Rope"}, "rope_nodes"
+    )
+    assert a["id"] != b["id"]
+    assert (a["id"], b["id"]) == ("rope", "rope-nodes")
+
+
+def test_entry_from_payload_tolerates_junk():
+    entry = library.entry_from_payload("x.json", None, "x")
+    assert entry["id"] == "x"
+    assert entry["tree_type"] is None
+    assert entry["blender_version"] == ""
+
+
+def test_entry_from_payload_drops_unknown_tree_types():
+    entry = library.entry_from_payload(
+        "x.json", {"tree_type": "CompositorNodeTree"}, "x"
+    )
+    assert entry["tree_type"] is None
+
+
+def test_indexed_entries_parse_back_as_a_valid_config():
+    """A generated config.json must be readable by the consuming side."""
+    doc = library.new_config(name="Mine")
+    for stem, name in (("vine_nodes", "Vines"), ("Rope", "Rope"),
+                       ("GN_FenceBuilder", "MyNodes")):
+        entry = library.entry_from_payload(
+            f"{stem}.json",
+            {"export_name": name, "tree_type": library.TREE_GEOMETRY},
+            stem,
+        )
+        assert library.upsert_entry(doc, entry)[0] == "added"
+    library.sort_entries(doc)
+
+    config, error = library.parse_config(json.dumps(doc))
+    assert error is None
+    assert len(config["entries"]) == 3
+    assert {e["id"] for e in config["entries"]} == {
+        "vine-nodes", "rope", "gn-fencebuilder",
+    }
+
+
+def test_reindexing_does_not_duplicate_or_clobber():
+    """Re-running the indexer leaves hand-written metadata alone."""
+    doc = library.new_config()
+    entry = library.entry_from_payload(
+        "vine_nodes.json", {"export_name": "Vines"}, "vine_nodes"
+    )
+    library.upsert_entry(doc, entry)
+    doc["entries"][0]["description"] = "Ivy that climbs a surface."
+    doc["entries"][0]["tags"] = ["vine", "plant"]
+
+    # Second pass with update_existing off - the default.
+    action, error = library.upsert_entry(doc, entry, overwrite=False)
+    assert action is None and "already exists" in error
+    assert len(doc["entries"]) == 1
+    assert doc["entries"][0]["description"] == "Ivy that climbs a surface."
+    assert doc["entries"][0]["tags"] == ["vine", "plant"]

@@ -783,6 +783,11 @@ class NODE_RUNNER_MT_menu(bpy.types.Menu):
             text="Publish to Library...",
             icon="URL",
         )
+        layout.operator(
+            "node_runner.library_index_folder",
+            text="Generate Library config.json...",
+            icon="FILEBROWSER",
+        )
 
         layout.separator()
 

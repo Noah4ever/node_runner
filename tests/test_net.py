@@ -428,3 +428,29 @@ def test_clear_cache_empties_the_catalog(monkeypatch, tmp_path):
     assert repo["entries"] == []
     assert repo["fetched"] == 0.0
     assert not (tmp_path / "repos").exists()
+
+
+# A token is only ever sent for a repository marked private
+
+
+def test_no_auth_header_for_a_public_repo(captured, monkeypatch, tmp_path):
+    monkeypatch.setattr(net, "cache_root", lambda create=False: tmp_path)
+    keys = net.sync_repos([_spec("tonis2/blender-nodes")])
+    repo = net.get_repo(keys[0])
+    assert repo["token"] == ""
+
+    url = library.content_url(repo["base"], repo["kind"], "config.json",
+                              bool(repo["token"]))
+    # No token means the plain raw URL, not the authenticated Contents API.
+    assert url.startswith("https://raw.githubusercontent.com/")
+    net.fetch(url, repo["kind"], repo["token"])
+    assert captured["request"].get_header("Authorization") is None
+
+
+def test_public_repo_refresh_needs_no_credentials(monkeypatch, tmp_path):
+    monkeypatch.setattr(net, "cache_root", lambda create=False: tmp_path)
+    net.sync_repos([_spec("tonis2/blender-nodes")])
+    started = []
+    monkeypatch.setattr(net, "submit", lambda *a, **k: started.append(a) or True)
+    assert net.refresh() == 1
+    assert started, "a public repository must still be refreshable"

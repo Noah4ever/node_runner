@@ -413,6 +413,72 @@ def parse_config(raw, source=""):
     }, None
 
 
+
+# Indexing a folder of existing exports
+
+# Export names Node Runner writes by default. They carry no information, so
+# the file name is a better display name than any of these.
+GENERIC_EXPORT_NAMES = frozenset(
+    {"", "mynodes", "my nodes", "nodes", "imported nodes", "nodetree"}
+)
+
+# Extensions the export operators can produce.
+EXPORT_SUFFIXES = (".json", ".txt", ".xml", ".nr")
+
+
+def prettify_stem(stem):
+    """Turn a file name stem into a readable display name.
+
+    Only all-lowercase words are capitalized, so ``vine_nodes`` becomes
+    "Vine Nodes" while ``GN_FenceBuilder`` keeps its own capitals instead
+    of being mangled into "Gn Fencebuilder".
+    """
+    text = re.sub(r"[_\-]+", " ", stem or "").strip()
+    words = [w for w in re.split(r"\s+", text) if w]
+    if not words:
+        return stem or ""
+    return " ".join(w.capitalize() if w.islower() else w for w in words)
+
+
+def entry_from_payload(relpath, data, stem=""):
+    """Build a config.json entry for an already-exported node setup.
+
+    *data* is the decoded export. *stem* is its file name without the
+    extension; it supplies the ``id`` (unique within a folder, so two
+    setups that were exported under the same name cannot collide) and the
+    display name whenever the export only carries a default label.
+    """
+    if not isinstance(data, dict):
+        data = {}
+
+    export_name = _clean_str(data.get("export_name"))
+    if export_name.lower() in GENERIC_EXPORT_NAMES:
+        export_name = ""
+
+    tree_type = data.get("tree_type")
+    if tree_type not in KNOWN_TREE_TYPES:
+        tree_type = None
+
+    return {
+        "id": slugify(stem or relpath),
+        "name": export_name or prettify_stem(stem),
+        "description": "",
+        "file": relpath,
+        "tree_type": tree_type,
+        "tags": [],
+        "blender_version": _clean_str(data.get("blender_version")),
+        "updated": "",
+    }
+
+
+def is_export_candidate(relpath):
+    """True when *relpath* looks like an exported node setup to index."""
+    lowered = (relpath or "").lower()
+    if lowered.endswith(CONFIG_NAME) or os.path.basename(lowered) == CONFIG_NAME:
+        return False
+    return lowered.endswith(EXPORT_SUFFIXES)
+
+
 # Search and filtering
 
 
