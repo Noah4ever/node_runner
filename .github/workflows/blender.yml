@@ -23,8 +23,10 @@ jobs:
     - name: Move files
       run: |
         mkdir extension
-        cp blender_manifest.toml LICENSE extension/
-        cp __init__.py operators.py constants.py encoding.py serialize.py deserialize.py node_data.py extension/
+        cp blender_manifest.toml extension/
+        # Read the shipped file list from the manifest rather than repeating
+        # it here - a module missing from the zip only fails at enable time.
+        cp $(python3 -c "import tomllib;print(' '.join(tomllib.load(open('blender_manifest.toml','rb'))['build']['paths']))") extension/
         
     - name: Build Blender Extension
       run: cd extension && ../blender/blender --command extension build

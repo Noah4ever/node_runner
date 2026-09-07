@@ -35,6 +35,11 @@ jobs=1
 #   many locals/arguments/branches. Splitting further would harm
 #   readability.
 #
+# R0911: too-many-return-statements
+#   URL normalization, config validation and the publish operator are
+#   chains of guard clauses. Collapsing them into nested conditionals
+#   would be harder to follow, not easier.
+#
 # W0201: attribute-defined-outside-init
 #   Blender operators set attributes in invoke() that are used in
 #   execute(), which is the standard pattern.
@@ -61,6 +66,7 @@ disable=
     R0914,
     R0912,
     R0915,
+    R0911,
     W0201,
     C0415,
     W0622,

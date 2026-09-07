@@ -32,6 +32,9 @@ FORMAT_XML = "XML"
 
 FORMATS = (FORMAT_HASH, FORMAT_JSON, FORMAT_AI_JSON, FORMAT_XML)
 
+# Upper bound on inflated hash payloads, guarding against zip bombs.
+MAX_DECOMPRESSED_BYTES = 256 * 1024 * 1024
+
 
 # Compact representation (used by base64 / hash format)
 
@@ -407,11 +410,29 @@ def encode(data: dict) -> str:
     return base64.b64encode(compressed).decode("utf-8")
 
 
-def decode(base64_encoded: str) -> dict:
-    """Decode and decompress a base64-encoded node tree string."""
+def decode(base64_encoded: str, *, allow_pickle: bool = True) -> dict:
+    """Decode and decompress a base64-encoded node tree string.
+
+    Set *allow_pickle* to ``False`` for data from an untrusted source such
+    as a library repository: the legacy pickle fallback below executes
+    arbitrary code, which is acceptable for a string the user pasted
+    themselves but never for one fetched over the network.
+    """
     try:
         compressed = base64.b64decode(base64_encoded)
-        raw = zlib.decompress(compressed)
+        # Bounded inflate - a tiny payload can otherwise expand to
+        # gigabytes and exhaust memory.
+        inflator = zlib.decompressobj()
+        raw = inflator.decompress(compressed, MAX_DECOMPRESSED_BYTES)
+        if inflator.unconsumed_tail:
+            raise ValueError(
+                "Node data expands beyond "
+                f"{MAX_DECOMPRESSED_BYTES // (1024 * 1024)} MB - refusing to decode it"
+            )
+        if not inflator.eof:
+            # decompressobj tolerates a truncated or empty stream where
+            # zlib.decompress would have raised; treat it as bad data.
+            raise ValueError("Failed to decode node data: incomplete stream")
 
         # New format: JSON
         try:
@@ -421,9 +442,14 @@ def decode(base64_encoded: str) -> dict:
             pass
 
         # Legacy format: pickle (backward compat)
+        if not allow_pickle:
+            raise ValueError(
+                "Refusing to decode legacy pickle data from an untrusted "
+                "source. Re-export this setup with a current Node Runner."
+            )
         log.info("Decoding legacy pickle format - re-export to upgrade.")
         return pickle.loads(raw)  # noqa: S301
-    except (zlib.error, pickle.UnpicklingError, binascii.Error) as exc:
+    except (zlib.error, pickle.UnpicklingError, binascii.Error, EOFError) as exc:
         raise ValueError(f"Failed to decode node data: {exc}") from exc
 
 
@@ -879,10 +905,15 @@ def encode_as(data: dict, fmt: str = FORMAT_HASH) -> str:
     raise ValueError(f"Unknown format: {fmt!r}")
 
 
-def decode_as(encoded: str, fmt: str = FORMAT_HASH) -> dict:
-    """Decode an encoded string in the given format."""
+def decode_as(encoded: str, fmt: str = FORMAT_HASH, *,
+              allow_pickle: bool = True) -> dict:
+    """Decode an encoded string in the given format.
+
+    *allow_pickle* only affects the hash format; the JSON and XML paths
+    never reach the pickle fallback.
+    """
     if fmt == FORMAT_HASH:
-        return decode(encoded)
+        return decode(encoded, allow_pickle=allow_pickle)
     if fmt == FORMAT_AI_JSON:
         return decode_ai_json(encoded)
     if fmt == FORMAT_JSON:

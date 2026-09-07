@@ -1,10 +1,10 @@
 schema_version = "1.0.0"
 
 id = "node_runner"
-version = "1.4.1"
+version = "1.5.0"
 name = "Node Runner"
 tagline = "Import and export nodes as strings"
-maintainer = "Noah Thiering <noah.thiering@gmail.com>"
+maintainer = "Tonis"
 
 type = "add-on"
 
@@ -19,13 +19,20 @@ license = ["SPDX:GPL-3.0-or-later"]
 paths = [
   "__init__.py",
   "operators.py",
+  "preferences.py",
+  "modifiers.py",
   "constants.py",
   "encoding.py",
   "node_data.py",
   "serialize.py",
   "deserialize.py",
+  "library.py",
+  "net.py",
+  "library_ui.py",
   "LICENSE",
 ]
 
 [permissions]
 clipboard = "Copy Node Runner Hash to clipboard"
+network = "Download node setups from the library repositories you configure"
+files = "Cache downloaded node setups and publish setups to a folder you pick"

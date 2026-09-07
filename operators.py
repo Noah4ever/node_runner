@@ -16,6 +16,12 @@ from .encoding import (
     decode_as,
     detect_format,
 )
+from .modifiers import (
+    apply_modifier_values,
+    collect_modifier_values,
+    find_modifier_for_tree,
+    reinit_gn_modifier,
+)
 from .serialize import serialize_node_tree
 from .deserialize import deserialize_node_tree
 
@@ -172,36 +178,6 @@ def _ensure_default_tree(operator, context, payload_tree_type):
     return None
 
 
-# Addon preferences
-
-
-class NODE_RUNNER_preferences(bpy.types.AddonPreferences):
-    bl_idname = __package__
-
-    import_at_cursor: bpy.props.BoolProperty(
-        name="Import at Cursor",
-        description="Offset imported nodes to the mouse cursor position",
-        default=True,
-    )  # type: ignore
-
-    select_imported: bpy.props.BoolProperty(
-        name="Select Imported Nodes",
-        description="Select only the imported nodes after import",
-        default=True,
-    )  # type: ignore
-
-    def draw(self, context):
-        layout = self.layout
-        layout.prop(self, "import_at_cursor")
-        layout.prop(self, "select_imported")
-
-
-def _get_prefs(context):
-    """Return addon preferences, with safe fallback defaults."""
-    prefs = context.preferences.addons.get(__package__)
-    if prefs:
-        return prefs.preferences
-    return None
 
 
 # Shared helpers
@@ -258,28 +234,44 @@ def _strip_header_and_detect(raw):
     return fmt, raw
 
 
-def _do_import(operator, context, raw, mouse_x=None, mouse_y=None):
+def _do_import(operator, context, raw, mouse_x=None, mouse_y=None, *,
+               allow_pickle=True, target="AUTO"):
     """Shared import logic for the clipboard and file Import operators.
 
     Decodes *raw*, checks the embedded Blender version, and either
     proceeds directly or pops a confirmation dialog when versions differ.
     Auto-creates a default node tree if the active editor is empty.
+
+    *allow_pickle* gates the legacy pickle decode path and must be ``False``
+    for anything fetched over the network. *target* decides where the nodes
+    land: ``"AUTO"`` uses whichever node editor is showing a matching tree,
+    while ``"ACTIVE_OBJECT"`` always builds a fresh tree on the active
+    object so an unrelated open node editor cannot capture the import.
     """
     fmt, payload = _strip_header_and_detect(raw)
 
     try:
-        data = decode_as(payload, fmt)
+        data = decode_as(payload, fmt, allow_pickle=allow_pickle)
     except ValueError as exc:
         operator.report({"ERROR"}, str(exc))
         return {"CANCELLED"}
 
-    # When invoked from a file picker, context.space_data is the file
-    # browser, which has no edit_tree. Fall back to scanning open areas
-    # for a node editor showing a tree of the right type.
-    edit_tree = getattr(context.space_data, "edit_tree", None)
+    if not allow_pickle:
+        # Image filepaths in an untrusted payload would make Blender open an
+        # arbitrary local (or UNC) path during deserialization.
+        _strip_image_paths(data)
+
     payload_tree_type = data.get("tree_type", "ShaderNodeTree")
-    if edit_tree is None or edit_tree.bl_idname != payload_tree_type:
-        edit_tree = _find_node_editor_tree(context, payload_tree_type) or edit_tree
+    if target == "ACTIVE_OBJECT":
+        # Applying to the selected object always means a new tree.
+        edit_tree = None
+    else:
+        # When invoked from a file picker, context.space_data is the file
+        # browser, which has no edit_tree. Fall back to scanning open areas
+        # for a node editor showing a tree of the right type.
+        edit_tree = getattr(context.space_data, "edit_tree", None)
+        if edit_tree is None or edit_tree.bl_idname != payload_tree_type:
+            edit_tree = _find_node_editor_tree(context, payload_tree_type) or edit_tree
 
     auto_created = False
     if edit_tree is None:
@@ -300,6 +292,10 @@ def _do_import(operator, context, raw, mouse_x=None, mouse_y=None):
         bpy.types.WindowManager.nr_pending_data = data
         bpy.types.WindowManager.nr_pending_mouse = (mouse_x, mouse_y)
         bpy.types.WindowManager.nr_pending_auto_created = auto_created
+        # The confirm operator has no way to re-derive the target: when the
+        # import came from the 3D viewport there is no space_data.edit_tree
+        # to fall back on.
+        bpy.types.WindowManager.nr_pending_tree = edit_tree
         return bpy.ops.node_runner.confirm_import(
             "INVOKE_DEFAULT",
             export_version=export_version,
@@ -325,7 +321,7 @@ def _apply_import(
     yet within the same operator invocation.
     """
     if edit_tree is None:
-        edit_tree = context.space_data.edit_tree
+        edit_tree = getattr(context.space_data, "edit_tree", None)
     if edit_tree is None:
         operator.report({"WARNING"}, "No active node tree to import into")
         return {"CANCELLED"}
@@ -393,14 +389,11 @@ def _apply_import(
     # Find freshly created nodes
     new_nodes = [n for n in edit_tree.nodes if n.name not in existing_names]
 
-    # Select imported nodes
-    prefs = _get_prefs(context)
-    select_imported = prefs.select_imported if prefs else True
-    if select_imported:
-        for node in new_nodes:
-            node.select = True
-        if new_nodes:
-            edit_tree.nodes.active = new_nodes[0]
+    # Select the imported nodes so they can be moved or duplicated as a group
+    for node in new_nodes:
+        node.select = True
+    if new_nodes:
+        edit_tree.nodes.active = new_nodes[0]
 
     # Offset to mouse cursor position
     if mouse_x is not None and mouse_y is not None and new_nodes:
@@ -440,9 +433,9 @@ def _apply_import(
     if auto_created and edit_tree.bl_idname == "GeometryNodeTree":
         obj = getattr(context, "active_object", None)
         if obj is not None:
-            mod = _reinit_gn_modifier(obj, edit_tree)
+            mod = reinit_gn_modifier(obj, edit_tree)
             if mod is not None:
-                _apply_modifier_values(
+                apply_modifier_values(
                     mod, data.get("modifier_values"), socket_id_map
                 )
 
@@ -465,191 +458,6 @@ def _format_extension(fmt):
     return ".txt"
 
 
-def _find_modifier_for_tree(context, edit_tree):
-    """Return a Geometry Nodes modifier whose node_group is *edit_tree*.
-
-    Prefers the active object's modifier so users get values from the
-    binding they are looking at; falls back to the first modifier in the
-    scene that uses the tree. Returns ``None`` if no modifier is bound
-    or the tree isn't a Geometry Nodes tree.
-    """
-    if edit_tree.bl_idname != "GeometryNodeTree":
-        return None
-    active = getattr(context, "active_object", None)
-    if active is not None:
-        for mod in active.modifiers:
-            if mod.type == "NODES" and mod.node_group is edit_tree:
-                return mod
-    for obj in bpy.data.objects:
-        for mod in obj.modifiers:
-            if mod.type == "NODES" and mod.node_group is edit_tree:
-                return mod
-    return None
-
-
-def _reinit_gn_modifier(obj, node_group):
-    """Re-create *obj*'s NODES modifier bound to *node_group*.
-
-    Returns the fresh modifier (or ``None`` if no matching modifier was
-    found). A newly added modifier initializes all of its inputs from the
-    node group's current interface defaults, which is the only reliable
-    way to push those defaults into the binding on Blender 5.2. The
-    auto-created modifier is the most recent one, so re-adding keeps it in
-    the same (last) slot.
-    """
-    old = None
-    for mod in obj.modifiers:
-        if mod.type == "NODES" and mod.node_group is node_group:
-            old = mod
-            break
-    if old is None:
-        return None
-    name = old.name
-    obj.modifiers.remove(old)
-    new_mod = obj.modifiers.new(name=name, type="NODES")
-    new_mod.node_group = node_group
-    return new_mod
-
-
-def _serialize_modifier_value(value):
-    """Convert a modifier socket value to a JSON-friendly representation.
-
-    ID references (Collection, Object, Material, ...) become a small dict
-    ``{"__id__": <type>, "name": <name>}`` so the importer can attempt
-    to resolve them by name in the target file.
-    """
-    if value is None:
-        return None
-    if isinstance(value, bpy.types.ID):
-        return {"__id__": type(value).__name__, "name": value.name}
-    if hasattr(value, "__len__") and not isinstance(value, str):
-        try:
-            return [float(x) for x in value]
-        except (TypeError, ValueError):
-            return list(value)
-    return value
-
-
-def _collect_modifier_values(mod):
-    """Capture per-instance modifier values keyed by socket identifier.
-
-    Skips the ``_use_attribute`` / ``_attribute_name`` companion keys —
-    those are toggle metadata, not the user-facing values.
-
-    Blender 4.x exposed a GN modifier's inputs as IDProperties
-    (``mod["Socket_3"]``). Blender 5.2 dropped that — ``mod.keys()`` and
-    item access raise ``TypeError`` — so we fall back to the node group's
-    interface socket defaults, which are the live input values there.
-    """
-    try:
-        keys = list(mod.keys())
-    except TypeError:
-        return _collect_interface_values(mod.node_group)
-    out = {}
-    for key in keys:
-        if key.endswith("_use_attribute") or key.endswith("_attribute_name"):
-            continue
-        out[key] = _serialize_modifier_value(mod[key])
-    return out
-
-
-def _interface_input_sockets(node_group):
-    """Yield the INPUT interface sockets of *node_group* (5.2-safe)."""
-    if node_group is None:
-        return
-    items = getattr(getattr(node_group, "interface", None), "items_tree", None)
-    if not items:
-        return
-    for item in items:
-        if getattr(item, "item_type", None) != "SOCKET":
-            continue
-        if getattr(item, "in_out", None) != "INPUT":
-            continue
-        if not hasattr(item, "default_value"):
-            continue
-        yield item
-
-
-def _collect_interface_values(node_group):
-    """Capture INPUT interface socket defaults keyed by identifier.
-
-    Used on Blender 5.2+, where GN modifier inputs are no longer
-    IDProperties and the interface default *is* the input value.
-    """
-    return {
-        item.identifier: _serialize_modifier_value(item.default_value)
-        for item in _interface_input_sockets(node_group)
-    }
-
-
-def _apply_modifier_values(mod, values, socket_id_map):
-    """Restore per-instance modifier values captured at export time.
-
-    Identifiers are remapped through *socket_id_map* because creating
-    interface sockets during deserialize allocates fresh IDs. ID
-    references (collections, objects, materials) are resolved by name;
-    if the target file doesn't have that data block, the slot is left
-    unset rather than crashing the import.
-    """
-    if not values:
-        return
-    node_group = getattr(mod, "node_group", None)
-    for old_id, raw_value in values.items():
-        new_id = socket_id_map.get(old_id, old_id)
-        try:
-            value = _resolve_id_value(raw_value)
-        except (TypeError, KeyError):
-            continue
-        if value is None and isinstance(raw_value, dict) and "__id__" in raw_value:
-            # ID reference that doesn't exist in this file — skip
-            continue
-        try:
-            mod[new_id] = value
-        except (TypeError, KeyError, AttributeError):
-            # Blender 5.2+: GN modifier inputs aren't IDProperties, so the
-            # item assignment above isn't available. Write the value onto
-            # the interface socket default instead — that's the live input.
-            if not _set_interface_default(node_group, new_id, value):
-                log.debug("Could not set modifier value '%s'", new_id)
-
-
-def _set_interface_default(node_group, identifier, value):
-    """Set an interface socket's default by identifier (Blender 5.2+).
-
-    Returns ``True`` if a matching socket was found and assigned.
-    """
-    for item in _interface_input_sockets(node_group):
-        if item.identifier != identifier:
-            continue
-        try:
-            item.default_value = value
-        except (TypeError, ValueError):
-            log.debug("Could not set interface default '%s'", identifier)
-        return True
-    return False
-
-
-def _resolve_id_value(payload):
-    """Resolve a serialized ID dict back to a Blender ID block by name.
-
-    Returns ``None`` if no matching ID exists in the current file.
-    """
-    if not isinstance(payload, dict) or "__id__" not in payload:
-        return payload
-    type_to_data = {
-        "Collection": bpy.data.collections,
-        "Object": bpy.data.objects,
-        "Material": bpy.data.materials,
-        "Image": bpy.data.images,
-        "Texture": bpy.data.textures,
-        "World": bpy.data.worlds,
-    }
-    data_block = type_to_data.get(payload["__id__"])
-    if data_block is None:
-        return None
-    return data_block.get(payload["name"])
-
-
 def _build_export_payload(operator, context):
     """Serialize the selected nodes for *operator*.
 
@@ -668,9 +476,9 @@ def _build_export_payload(operator, context):
 
     # Capture modifier values so re-imports recreate the same look the
     # source object had, not just the tree's interface defaults.
-    mod = _find_modifier_for_tree(context, edit_tree)
+    mod = find_modifier_for_tree(context, edit_tree)
     if mod is not None:
-        data["modifier_values"] = _collect_modifier_values(mod)
+        data["modifier_values"] = collect_modifier_values(mod)
 
     export_str = _build_export_string(
         data,
@@ -837,18 +645,9 @@ class NODE_RUNNER_OT_import_clipboard(bpy.types.Operator):
     def poll(cls, context):
         return _supported_editor_poll(context)
 
-    import_at_cursor: bpy.props.BoolProperty(
-        name="Import at Cursor",
-        description="Offset imported nodes to the mouse cursor position",
-        default=True,
-    )  # type: ignore
-
     def invoke(self, context, event):
         self._mouse_x = event.mouse_region_x
         self._mouse_y = event.mouse_region_y
-        prefs = _get_prefs(context)
-        if prefs:
-            self.import_at_cursor = prefs.import_at_cursor
         return self.execute(context)
 
     def execute(self, context):
@@ -856,12 +655,12 @@ class NODE_RUNNER_OT_import_clipboard(bpy.types.Operator):
         if not raw:
             self.report({"WARNING"}, "Clipboard is empty")
             return {"CANCELLED"}
-        if self.import_at_cursor:
-            mouse_x = getattr(self, "_mouse_x", None)
-            mouse_y = getattr(self, "_mouse_y", None)
-        else:
-            mouse_x = mouse_y = None
-        return _do_import(self, context, raw, mouse_x, mouse_y)
+        # No mouse coords when called from a script rather than invoke();
+        # _apply_import then leaves the exported positions alone.
+        return _do_import(
+            self, context, raw,
+            getattr(self, "_mouse_x", None), getattr(self, "_mouse_y", None),
+        )
 
 
 class NODE_RUNNER_OT_import_file(bpy.types.Operator):
@@ -936,6 +735,7 @@ class NODE_RUNNER_OT_confirm_import(bpy.types.Operator):
         auto_created = getattr(
             bpy.types.WindowManager, "nr_pending_auto_created", False
         )
+        edit_tree = getattr(bpy.types.WindowManager, "nr_pending_tree", None)
 
         if data is None:
             self.report({"ERROR"}, "No pending import data")
@@ -946,9 +746,12 @@ class NODE_RUNNER_OT_confirm_import(bpy.types.Operator):
         del bpy.types.WindowManager.nr_pending_mouse
         if hasattr(bpy.types.WindowManager, "nr_pending_auto_created"):
             del bpy.types.WindowManager.nr_pending_auto_created
+        if hasattr(bpy.types.WindowManager, "nr_pending_tree"):
+            del bpy.types.WindowManager.nr_pending_tree
 
         return _apply_import(
-            self, context, data, mouse[0], mouse[1], auto_created=auto_created,
+            self, context, data, mouse[0], mouse[1],
+            edit_tree=edit_tree, auto_created=auto_created,
         )
 
 
@@ -974,6 +777,11 @@ class NODE_RUNNER_MT_menu(bpy.types.Menu):
             NODE_RUNNER_OT_export_file.bl_idname,
             text="Save to File...",
             icon="FILE_TICK",
+        )
+        layout.operator(
+            "node_runner.library_publish",
+            text="Publish to Library...",
+            icon="URL",
         )
 
         layout.separator()
@@ -1002,7 +810,6 @@ def menu_draw(self, context):
 
 
 _classes = (
-    NODE_RUNNER_preferences,
     NODE_RUNNER_OT_export_clipboard,
     NODE_RUNNER_OT_export_file,
     NODE_RUNNER_OT_confirm_import,
@@ -1022,3 +829,19 @@ def unregister():
     bpy.types.NODE_MT_context_menu.remove(menu_draw)
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)
+
+
+# Public API
+#
+# The library modules build on the import/export machinery above. Exposing
+# these under public names keeps them from reaching into underscore-prefixed
+# internals while leaving the existing call sites untouched.
+
+FORMAT_ITEMS = _FORMAT_ITEMS
+blender_version_string = _blender_version_string
+supported_editor_poll = _supported_editor_poll
+supported_tree_poll = _supported_tree_poll
+build_export_payload = _build_export_payload
+ensure_default_tree = _ensure_default_tree
+import_raw = _do_import
+strip_header_and_detect = _strip_header_and_detect

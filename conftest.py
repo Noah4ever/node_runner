@@ -6,6 +6,7 @@ Because this file lives **outside** the ``node_runner`` package, pytest
 processes it before discovering or importing anything from the package.
 """
 
+import os
 import sys
 import types
 from unittest.mock import MagicMock
@@ -172,6 +173,26 @@ class Menu(_TypeBase):
     bl_label = ""
 
 
+class Panel(_TypeBase):
+    bl_idname = ""
+    bl_label = ""
+    bl_space_type = ""
+    bl_region_type = ""
+    bl_category = ""
+
+
+class PropertyGroup(_TypeBase):
+    pass
+
+
+class UIList(_TypeBase):
+    pass
+
+
+class WindowManager(_TypeBase):
+    pass
+
+
 class NodeLink(_TypeBase):
     pass
 
@@ -222,6 +243,10 @@ for _name, _cls in [
     ("Operator", Operator),
     ("AddonPreferences", AddonPreferences),
     ("Menu", Menu),
+    ("Panel", Panel),
+    ("PropertyGroup", PropertyGroup),
+    ("UIList", UIList),
+    ("WindowManager", WindowManager),
     ("NodeLink", NodeLink),
     ("NodeTree", NodeTree),
     ("NODE_MT_context_menu", NODE_MT_context_menu),
@@ -234,6 +259,10 @@ bpy_props = types.ModuleType("bpy.props")
 bpy_props.StringProperty = lambda **kw: ""
 bpy_props.BoolProperty = lambda **kw: False
 bpy_props.EnumProperty = lambda **kw: ""
+bpy_props.IntProperty = lambda **kw: 0
+bpy_props.FloatProperty = lambda **kw: 0.0
+bpy_props.CollectionProperty = lambda **kw: []
+bpy_props.PointerProperty = lambda **kw: None
 bpy_mod.props = bpy_props
 
 bpy_mod.data = MagicMock()
@@ -246,7 +275,57 @@ bpy_mod.path = bpy_path
 bpy_utils = types.ModuleType("bpy.utils")
 bpy_utils.register_class = lambda cls: None
 bpy_utils.unregister_class = lambda cls: None
+
+
+def _user_resource(_resource_type, path="", create=False):
+    """Mirror bpy.utils.user_resource, rooted in the system temp dir."""
+    import tempfile
+
+    root = os.path.join(tempfile.gettempdir(), "node_runner_test_resources")
+    full = os.path.join(root, path) if path else root
+    if create:
+        os.makedirs(full, exist_ok=True)
+    return full
+
+
+def _extension_path_user(package, path="", create=False):
+    """Only valid for bl_ext.* packages; raises otherwise, exactly as
+    Blender does for a legacy scripts/addons install."""
+    if not package.startswith("bl_ext."):
+        raise ValueError(f"Expected a bl_ext.* package, not {package!r}")
+    return _user_resource("EXTENSIONS", path=os.path.join(package, path), create=create)
+
+
+bpy_utils.user_resource = _user_resource
+bpy_utils.extension_path_user = _extension_path_user
 bpy_mod.utils = bpy_utils
+
+
+# bpy.app -- absent from the real module namespace until accessed, but the
+# library code reads app.online_access and app.timers.
+
+
+class _Timers:
+    def __init__(self):
+        self._registered = []
+
+    def register(self, func, first_interval=0.0, persistent=False):
+        self._registered.append(func)
+
+    def unregister(self, func):
+        if func not in self._registered:
+            raise ValueError("timer is not registered")
+        self._registered.remove(func)
+
+    def is_registered(self, func):
+        return func in self._registered
+
+
+bpy_app = types.ModuleType("bpy.app")
+bpy_app.version = (5, 2, 0)
+bpy_app.online_access = True
+bpy_app.timers = _Timers()
+bpy_mod.app = bpy_app
 
 bpy_mod.ops = MagicMock()
 
@@ -254,3 +333,4 @@ sys.modules["bpy"] = bpy_mod
 sys.modules["bpy.types"] = bpy_types
 sys.modules["bpy.props"] = bpy_props
 sys.modules["bpy.utils"] = bpy_utils
+sys.modules["bpy.app"] = bpy_app
